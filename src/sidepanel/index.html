@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PonPon</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font: 13px/1.4 system-ui, sans-serif;
+        margin: 12px;
+      }
+      h1 {
+        font-size: 15px;
+      }
+      pre {
+        overflow-x: auto;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Engine benchmark (M0)</h1>
+    <p>Stockfish 19 lite single in a Web Worker. It takes a few minutes; keep this panel open and the tab in front.</p>
+    <button id="run">Run</button>
+    <button id="copy" disabled>Copy</button>
+    <p id="status"></p>
+    <pre id="out"></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "PonPon – Chess Move Coach",
+  "short_name": "PonPon",
+  "version": "0.0.1",
+  "description": "Turn every pawn into gold. Post-game review for chess.com, with Stockfish running locally.",
+  "permissions": ["sidePanel"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "side_panel": { "default_path": "src/sidepanel/index.html" },
+  "action": { "default_title": "PonPon" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

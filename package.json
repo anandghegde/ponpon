@@ -1,0 +1,27 @@
+{
+  "name": "ponpon",
+  "version": "0.0.1",
+  "private": true,
+  "description": "PonPon – Chess Move Coach. Post-game review for chess.com with Stockfish running locally.",
+  "license": "GPL-3.0",
+  "type": "module",
+  "scripts": {
+    "prebuild": "node scripts/copy-engine.ts",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "bench:node": "node scripts/bench-node.ts"
+  },
+  "dependencies": {
+    "chess.js": "1.4.0",
+    "stockfish": "19.0.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.6",
+    "@types/node": "24.19.2",
+    "happy-dom": "21.0.4",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
