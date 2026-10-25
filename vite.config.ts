@@ -4,6 +4,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // The side panel bundles the opening book (CLS-4), about 700 kB.
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: {
         sidepanel: 'src/sidepanel/index.html',

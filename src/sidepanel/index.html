@@ -7,27 +7,164 @@
     <style>
       :root {
         color-scheme: light dark;
+        --muted: color-mix(in srgb, currentColor 55%, transparent);
+        --line: color-mix(in srgb, currentColor 18%, transparent);
       }
       body {
         font: 13px/1.4 system-ui, sans-serif;
         margin: 12px;
       }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
       h1 {
         font-size: 15px;
+        margin: 0 0 8px;
       }
-      pre {
-        overflow-x: auto;
-        font-size: 11px;
+      p {
+        margin: 4px 0;
       }
+      #status,
+      .opening,
+      .num {
+        color: var(--muted);
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px;
+        margin: 8px 0;
+      }
+      .players {
+        font-weight: 600;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 6px;
+      }
+      td {
+        padding: 1px 4px;
+      }
+      td.n {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      #moves {
+        display: grid;
+        grid-template-columns: 2.5em 1fr 1fr;
+        gap: 1px 4px;
+        max-height: 50vh;
+        overflow-y: auto;
+        margin: 8px 0;
+      }
+      .num {
+        text-align: right;
+        padding: 1px 0;
+      }
+      .move {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        border-radius: 3px;
+        padding: 1px 4px;
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        cursor: pointer;
+        text-align: left;
+      }
+      .move:hover {
+        background: var(--line);
+      }
+      .move.selected {
+        background: color-mix(in srgb, currentColor 28%, transparent);
+      }
+      .move.pending {
+        color: var(--muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+        display: inline-block;
+        margin-right: 4px;
+        background: var(--c, transparent);
+        box-shadow: inset 0 0 0 1px var(--c, var(--line));
+      }
+      .move .dot {
+        margin-right: 0;
+      }
+      .sym {
+        color: var(--c);
+        font-weight: 700;
+      }
+      .head {
+        font-weight: 600;
+      }
+      .line {
+        color: var(--muted);
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        font: 12px ui-monospace, monospace;
+      }
+      details {
+        margin: 8px 0;
+      }
+      #paste-error {
+        color: #dc3b3b;
+      }
+      /* Label colours (PRD §6.4). */
+      .l-book { --c: #a0703c; }
+      .l-brilliant { --c: #d4a017; }
+      .l-great { --c: #179c9c; }
+      .l-best { --c: #3f9b3f; }
+      .l-excellent { --c: #7ac35f; }
+      .l-good { --c: #8aa58a; }
+      .l-inaccuracy { --c: #e1b81f; }
+      .l-mistake { --c: #ee8a2a; }
+      .l-blunder { --c: #dc3b3b; }
     </style>
   </head>
   <body>
-    <h1>Engine benchmark (M0)</h1>
-    <p>Stockfish 19 lite single in a Web Worker. It takes a few minutes; keep this panel open and the tab in front.</p>
-    <button id="run">Run</button>
-    <button id="copy" disabled>Copy</button>
-    <p id="status"></p>
-    <pre id="out"></pre>
+    <header>
+      <h1>PonPon</h1>
+      <span id="status"></span>
+    </header>
+    <p id="notice" class="card" hidden></p>
+    <p id="held" class="card" hidden>The game is over. <button id="review-now">Review it</button></p>
+    <p id="pasted" hidden>Pasted game · <button id="close-paste">Close</button></p>
+    <section id="summary" class="card" hidden></section>
+    <div id="moves"></div>
+    <section id="detail" class="card" hidden></section>
+    <details id="paste" hidden>
+      <summary>Paste a PGN or FEN</summary>
+      <textarea id="pgn" rows="6" placeholder="1. e4 e5 2. Nf3 … or a FEN"></textarea>
+      <button id="review-pgn">Review</button>
+      <p id="paste-error"></p>
+    </details>
+    <details id="settings">
+      <summary>Settings</summary>
+      <p>
+        <label
+          >Strength
+          <select id="preset">
+            <option value="fast">Fast (depth 12)</option>
+            <option value="normal">Normal (depth 16)</option>
+            <option value="deep">Deep (depth 18)</option>
+          </select></label
+        >
+      </p>
+      <p><label><input type="checkbox" id="auto-review" /> Review a game as soon as it ends</label></p>
+      <p><label><input type="checkbox" id="arrows" /> Arrows on the board</label></p>
+      <p class="line">Gold: the best move in the position on the board (fainter: the second best). Green: what was better than the move just played.</p>
+    </details>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

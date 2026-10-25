@@ -1,92 +1,97 @@
-# Handoff: PonPon M0 spike
+# Handoff: PonPon M1 (Review MVP), built and checked live
 
-*2026-10-24. Read `docs/PRD.md` §10 (M0 row) first, then `docs/chesscom-dom.md`.*
+*2026-10-25. Read `docs/PRD.md` §10 (M1 row), §6.4 and §13 first, then `docs/chesscom-dom.md`.*
 
-## Where M0 stands
+## Where M1 stands
 
-M0 has two halves (PRD §10):
+Everything in M1's scope is built and checked on real chess.com pages, except the one check that needs chess.com's own labels.
 
-| Part | Status | Verify step | Result |
-|---|---|---|---|
-| **(a) Adapter**: read moves, ply, orientation and state on 5 page types; save HTML fixtures | **Done** | The SAN list matches the downloaded PGN for 5 of the user's games; page-state classification is right on all 5 page types | ✅ `npx vitest run` → 34/34 pass. SAN matches the PubAPI PGN for 5 of the user's Live games plus 1 public Daily game. Classification is right on all 14 fixtures (analysis, finished Live, finished Daily, bot in progress and finished, Live and Daily in progress) |
-| **(b) Engine**: Stockfish 19 lite single in a side-panel worker; measure nodes/s and per-position time at depths 12/16/20 | **Done** | Timings in `docs/perf.md`; ENG-4 depths fixed | ✅ The user ran the benchmark in the side panel (Chrome 155): Chrome is within 4% of Node. ENG-4 is now **Fast 12 / Normal 16 / Deep 18**, about 2 s, 31 s and 52 s for a 40-move game (the user chose 18 over 20, which took 100 s). The PRD's ENG-4 and §9 rows are updated |
+| Part | Status | How it was checked |
+|---|---|---|
+| Classifier (CLS-1, CLS-2, ENG-3) | **Done** | `test/classify.test.ts`, plus two fixes found on real games: Book stops at a mistake, and a sacrifice is measured against the best alternative too (PRD §13, 2026-10-25) |
+| Opening book (CLS-4) | **Done** | 7,982 positions from lichess-org/chess-openings at `a6189a3`; `npm run build:book` regenerates it |
+| Golden tests (CLS-5) | **Done, labels to hand-check** | 32 positions in `test/golden-cases.ts`: book, Fool's and Scholar's Mates, mates for and against, stalemate, a lost position, only moves, recaptures, a real sacrifice (a desperado that forces stalemate), fake sacrifices, and every drop band, half of them from the user's games. Engine output recorded once (`npm run record:golden`), so `test/golden.test.ts` runs offline |
+| Review pipeline (REV-1, REV-4, REV-5, ENG-2) | **Done** | `test/review.test.ts` with the real engine |
+| Content script, messaging, page states (SRC-1–5, FP-1, FP-2) | **Done** | Fixtures, and live: `npm run e2e` |
+| Side panel (REV-2–4, SRC-4 PGN and FEN, FP-3, ENG-5) | **Done** | `test/session.test.ts` and `npm run e2e` |
+| Settings (ENG-4 preset, FP-3 auto-review; DATA-1, DATA-4) | **Done** | In the panel's Settings; `chrome.storage.local`; `storage` permission |
+| IndexedDB cache (DATA-1, DATA-2) | **Done** | `test/store.test.ts` (fake-indexeddb) and live: a reviewed game reopens in about 200 ms |
+| Watching a game live (FP-7) and the other-tab lock (FP-5) | **Done** (asked, 2026-10-25) | Adapter tests (I'm a player, logged out, a name unread, `/play/online`), session tests, and `npm run e2e` with a planted profile link |
+| Arrows on the board, panel ↔ board sync (BRD-1, BRD-2, BRD-4 toggle, SYNC-1, SYNC-2; from M2, asked) | **Done** | `test/arrows.test.ts`; `npm run e2e`: arrows over the right squares, ← on chess.com moves the card and arrows, a panel click moves chess.com's board, none on a locked page, cleared by the page itself when it turns into my game |
+| FP matrix (FP-6) | **Done** | `test/session.test.ts`, and `npm run e2e`: 36 live checks, all passing on 2026-10-25 |
+| 20 of the user's games reviewed | **Done** | `agreement/`: the latest 20 games, PGNs and Normal-depth evaluations |
+| Label agreement with chess.com (§11) | **Waiting on chess.com labels** | `npm run agreement` compares as soon as `agreement/<id>.chesscom.txt` files exist (format in `agreement/README.md`). The free account allows one Game Review a day |
 
-`npx vitest run` → 41/41 pass, `npm run typecheck` is clean, and `npm run build` produces `dist/`. The Stockfish worker and its WASM load fine in the extension page.
+`npx vitest run` → 158/158, `npm run typecheck` clean, `npm run build` → `dist/`, `npm run e2e` → 36/36.
 
-**M0 is complete.** Next is M1 (PRD §10).
+## What the live run covers (`npm run e2e`, about 4 minutes)
+
+A finished game reviewed at Normal (63 moves in 22 s, first label 0.5 s after the review starts) · reopened from the store (~200 ms) · Fast preset, kept across panel reloads · chess.com home locked (`unknown`) · puzzles `unsupported` · another site: PGN paste, FEN paste, bad paste refused · a game that ends while watched: nothing shown and engine idle while in progress, review 120 ms after the result appears · auto-review off: the ended game waits for "Review it", a finished game opened later still reviews · empty analysis board shows the position, moves graded as played · someone else's game graded live while in progress, nothing held when it ends · my own game in progress locked · a game of mine in another window locks the analysis board until it closes · a guest bot game graded live · another tab stops the review and it resumes from the cache · a hidden panel pauses and resumes · no network requests from the panel.
+
+## Next steps
+
+1. **User:** reload the unpacked extension (chrome://extensions → PonPon → reload) and any open chess.com tabs, then use it. Report anything that looks wrong.
+2. **User:** check the 32 golden labels (`npx vitest run test/golden.test.ts` lists them by name; each name says why).
+3. **User, one a day:** after a Game Review on chess.com, put its labels in `agreement/<id>.chesscom.txt`, then `npm run agreement`. With Claude in Chrome connected, Claude can read them off the review page instead.
+4. Then M2: live suggestions (`go infinite`, MultiPV 3, eval bar) with arrows that deepen as the engine searches, and BRD-4's shortcut.
+
+## Decisions made (check with the user if any matter)
+
+Earlier, asked: Great's second guard (Scholar's 4.Qxf7# stays Great); the panel talks to the content script directly; FP-3 needs the panel open.
+
+Made while building, not asked:
+1. **Book stops at a mistake** (PRD rule 1): the lichess book names Fool's Mate and other traps, so 2.g4?? was "Book". A book move with Δ ≥ 10 is graded normally and ends the book.
+2. **A sacrifice is measured against P and against the best other move** played out as far (PRD rule 2), unless that move gets mated. On the user's 20 games the old rule gave a false Brilliant for a bishop that was lost anyway (17…Kc7); the alternative alone gave four more false ones (captures that grabbed less than a greedy alternative). Now there is one, a real exchange sacrifice.
+3. **Great is common, about 2.6 per game**, mostly taking a piece left hanging; that follows the approved rule (only move, second best ≥ 10 worse and < 75). Left as is; Great is outside the §11 check.
+4. **Stored reviews keep evaluations, not labels** (PRD DATA-1 updated): labels are graded again on open, so they follow `thresholds.ts`. The key is `[engine build, depth, start FEN, SANs]`. A game that grew replaces its shorter versions (a bot game takes one place, not one per move).
+5. **Settings in the panel for now:** Strength (Fast/Normal/Deep) and "Review a game as soon as it ends". Changing the strength reviews the shown game again (or reopens it from the store). SET-2's full screen is M3.
+6. **Auto-review off:** a game that ends while watched waits for "Review it". A game counts as watched after 3 s in progress, because a finished game's page draws its moves a moment before its result row (PRD FP-3 updated).
+7. **FEN paste** reviews the one position: its eval and two best lines.
+8. **`/live/game/<id>`** is a game page (chess.com redirects `/game/<id>` there once a game is over, at least logged out).
+9. **The panel connects as soon as the content script says it's ready**, not only on the tab's load event; chess.com pages can take many seconds to finish loading. A port that drops after answering means the page is navigating: the panel waits, locked, without "Reload the page".
+10. **Dev dependencies:** `fake-indexeddb` 6.2.5 (store tests), `puppeteer-core` 25.13.0 (e2e). Both pinned to releases at least two weeks old.
+11. **Watching a game is reviewed live (FP-7, asked).** `spectating` needs my name (sidebar profile link) and both players' names, none equal; anything unread is `in-progress-vs-human`. `/play/online` is never `spectating`.
+12. **FP-5 lives in the panel, not the service worker:** the panel keeps a port to every chess.com tab in every window. It locks on another tab that is `in-progress-vs-human`, a game URL that hasn't answered yet (briefly, while it loads), or a game URL whose content script never answers ("Reload or close it"). Discarded tabs don't count. Incognito tabs are invisible to PonPon unless it's allowed there.
+13. **Arrows (asked).** Gold = best move in the position on chess.com's board, faint gold = second best, green = what was better than the move that led there (only after Good or worse). They come from the review (depth 16, MultiPV 2); the review evaluates the board's position and the one before it first, and the panel shows positions as they arrive. The layer is `<ponpon-arrows>` (open shadow root) fixed over the board, re-placed every animation frame while shown. The panel's selected move follows chess.com's board (SYNC-1); clicking a move in the panel clicks chess.com's own move (`.node-highlight-content`) (SYNC-2). Settings has an "Arrows on the board" switch.
 
 ## What's in the repo
 
 ```
-package.json            chess.js 1.4.0, stockfish 19.0.1; dev: vite 8.3.5, vitest 5.0.5, happy-dom 21.0.4, typescript 7.0.2, @types/chrome, @types/node
-tsconfig.json           erasableSyntaxOnly + allowImportingTsExtensions: imports use .ts extensions, no enums or parameter properties (Node 26 runs .ts directly)
-vite.config.ts          inputs: src/sidepanel/index.html (TODO) and src/background.ts → dist/
-public/manifest.json    MV3, permission sidePanel only, CSP with 'wasm-unsafe-eval'
-scripts/copy-engine.ts  prebuild: copies stockfish-19-lite-single.{js,wasm} into public/engine/ (gitignored)
-src/background.ts       openPanelOnActionClick
-src/adapter/selectors.ts  every chess.com selector (SRC-1)
-src/adapter/read.ts       readGame(doc) → { sans, ply, orientation, placement, players, result }; throws if the page looks wrong
-src/adapter/page-state.ts classifyPage(url, doc) → PageState (SRC-2)
-src/game/replay.ts        replay(sans) → FENs (SRC-3); sansFromPgn(pgn)
-src/engine/uci.ts         Uci (transport-agnostic, one request at a time) + parseInfo; scores stay side-to-move (ENG-3 is M1's job)
-src/engine/bench.ts       runDepth, runSuggest, runBench → markdown report; shared by Node and the side panel
-src/sidepanel/            M0 benchmark page: Run, progress, report in a <pre>, Copy. M1 replaces it with the real panel
-scripts/bench-node.ts     npm run bench:node: the same benchmark under Node
-test/adapter.test.ts      fixture tests (happy-dom)
-test/engine.test.ts       parseInfo, Uci ordering, one depth-8 run on the real engine under Node
-docs/perf.md              M0(b) setup, Node baseline, provisional reading; Chrome section and ENG-4 decision pending
-test/fixtures/chesscom/   14 sanitized page snapshots (the first line holds the page URL)
-test/fixtures/pgn/        PubAPI PGNs for the 5 user games + Daily game 1045360362
-docs/chesscom-dom.md      DOM findings, hazards, how to capture fixtures
-LICENSE                   GPL-3.0 (copied from the stockfish package)
+public/manifest.json      MV3: sidePanel, storage; host permission https://www.chess.com/*; content script content.js
+vite.config.ts            side panel + background → dist/
+vite.content.config.ts    the content script on its own, as one IIFE
+scripts/build-book.ts     npm run build:book
+scripts/review-node.ts    npm run review:node -- <pgn> [fast|normal|deep]
+scripts/record-golden.ts  npm run record:golden: engine output for test/golden-cases.ts
+scripts/agreement.ts      npm run agreement [-- latest <n>]: §11 label agreement (agreement/README.md)
+scripts/e2e.ts            npm run e2e: the live FP matrix in Chrome for Testing (npm run build first)
+scripts/bench-node.ts     M0 engine benchmark under Node
+src/adapter/              selectors, readGame, classifyPage + isUnlocked, snapshot()
+src/content/content.ts    observes the DOM while a panel is connected; announces itself on load
+src/classify/             thresholds.ts (every number), classify.ts, book.ts + book.json
+src/review/review.ts      PRESETS, review() (skips the engine when every position is cached), summarise()
+src/sidepanel/session.ts  panel state: guard, paste, auto-review hold, one review at a time, pause/resume
+src/sidepanel/store.ts    ReviewStore: IndexedDB, 500 games, LRU
+src/sidepanel/view.ts     rendering; main.ts wires tabs, ports, settings, the store and the engine worker
+agreement/                the user's latest 20 games: PGN + evaluations; chess.com labels go here
+test/                     adapter, engine, classify, review, session, store, golden (+ golden-cases.ts)
 ```
-
-No git repo yet. Suggest `git init` and a first commit, but only once the user asks.
-
-## Decisions made in this session (check with the user if any matter)
-
-1. **Unlocking is stricter than FP-2.** A game against a person counts as `finished-game` only when `.game-result` is in the move list. The game-over modal alone doesn't unlock, because it reappears on old pages and its winner class proved wrong once. In every fixture both signals appear together.
-2. **`/play/online` is treated like a game page** (locked unless a result shows). Unverified: nobody has captured the user's own Live game yet.
-3. **Every page PonPon doesn't recognise is `unknown` (locked)**, including the home page and profiles. Open UI question for M1: FP-1's "Game in progress" message would then show on pages that have no game, so they probably need their own message ("Open a game or the analysis board"), with no new page state.
-4. **`readGame` cross-checks against the board (beyond the PRD).** It returns `placement`, the piece placement read from the board's piece elements, and the tests assert that `replay(sans)[ply]` matches it. M1 should use this as principle 1's guard: it catches custom start positions and Chess960, which the adapter can't detect otherwise.
-5. **`ply` is `null` when a side line is selected** on the analysis board. Working out the branch point is M1/M2 work (SUG-1 needs the live analysis position); see `docs/chesscom-dom.md`.
-6. **The manifest asks only for `sidePanel` for now.** Add `storage` and the `https://www.chess.com/*` host permission (DATA-4) in M1, when they're used.
-7. **Fixtures for in-progress games against people come from spectating** (the user's choice: no risk to their account). Capture the user's own in-progress game in M1 with the content script.
-
-## Notes for M1 from M0(b)
-
-- Unconfirmed: the side panel's Copy button may not work. When the user first said they were done, the clipboard held a URL, not the report; it may have been overwritten after Copy. If M1 adds copy or export, test it.
-- Timing in Chrome needs the user: Claude in Chrome can't open `chrome://` or `chrome-extension://` pages. Node is within 4% of Chrome, so use `npm run bench:node` for quick checks.
-- `bench.ts`'s `DEPTHS` constant is still 12/16/20 (the M0 measurement set). Depth 18 was measured separately; the presets themselves belong in M1's settings (SET-2).
-
-## Background for M0(b) (kept for reference; this plan is done)
-
-What's already known:
-- `node_modules/stockfish/bin/stockfish-19-lite-single.js` is itself the worker script. It finds its `.wasm` next to itself (from the script URL, or `#path` in the hash). In the side panel: `new Worker(chrome.runtime.getURL('engine/stockfish-19-lite-single.js'))`; lines arrive as `onmessage` strings, and commands go in through `postMessage`.
-- Node uses the same WASM: `require('stockfish')('lite-single', onLine)` → `.processCommand(cmd)`, `.terminate()`. **`go` returns immediately and `stop` is honoured** (tested: `go infinite` stopped at 2.04 s and had reached depth 24 from 1.e4 e5 2.Nf3 Nc6). So `go infinite` plus a timed `stop` will work for SUG-2.
-- In Node the engine may call the listener synchronously, so **register the "wait for line X" handler before sending the command**.
-
-Suggested plan:
-1. `src/engine/uci.ts`: a transport-agnostic UCI client (`receive(line)`, `request(cmd, until, onLine)`, `init(options)`), plus `parseInfo(line)` → `{depth, multipv, score {cp}|{mate}, nodes, nps, time, pv}`. Skip `info` lines without a score. ENG-3's normalisation to White's view belongs here or in M1.
-2. `src/engine/bench.ts`:
-   - `runDepth(uci, fens, depth, multiPv = 2)`: `ucinewgame` once per run, then `position fen` + `go depth D` for each position. Record wall time per position and nodes from the last info line. Report total, mean, p50, p90, max and nodes/s.
-   - `runSuggest(uci, fen)` with MultiPV 3: time to the first line, to depth 10, to depth 16 and to depth 22, capped at 15 s.
-   - Positions: replay `test/fixtures/pgn/185404401434.pgn` (92 positions). Extrapolate to a 40-move game (81 positions) for the §9 target (≤ 60 s at Normal).
-   - Proposed options: `Hash 64` (record it), `Threads 1`.
-3. `src/sidepanel/index.html` + `main.ts`: a Run button, progress, the results as a markdown table in a `<pre>`, and a Copy button. No framework.
-4. `scripts/bench-node.ts`: the same benchmark under Node for a baseline (read the PGN with `fs`).
-5. `npm run build`. The **user** has to load `dist/` unpacked (chrome://extensions → Developer mode → Load unpacked), open the side panel from the toolbar icon on any page, run the benchmark and paste the results back. Claude in Chrome can't open `chrome://` or `chrome-extension://` pages.
-6. Write `docs/perf.md` (machine, Chrome version, options, both tables) and set ENG-4's Fast/Normal/Deep depths in the PRD from the numbers (target: Normal review ≤ 60 s, first labels ≤ 5 s).
 
 ## Gotchas (learned the hard way)
 
-- **Never `cloneNode` chess.com's DOM.** It breaks the live move list. Use `outerHTML` + `DOMParser` (details in `docs/chesscom-dom.md`). An earlier note in this session that "the bot move list empties when the game ends" was caused by this bug and is **wrong**.
-- **Don't open `/analysis/game/...` URLs.** They start chess.com's Game Review. This happened once this session, and may have used the user's free daily review.
-- Chrome blocks automatic downloads from chess.com. Use the clipboard method in `docs/chesscom-dom.md`.
-- Claude in Chrome: `javascript_tool` calls time out at 45 s, so poll in chunks of 25 s or less. Its output filter blocks text that looks like query strings, base64 or JWTs, so return summaries, not raw HTML. Screenshot coordinates aren't CSS pixels: the viewport here was 2048 CSS px wide against a 1568 px screenshot frame.
-- Bot games: Martinfoot is preselected at `/play/computer`. Resigning is the flag button followed by an in-page confirm, not a browser dialog.
+- **Never `cloneNode` chess.com's DOM.** Use `outerHTML` + `DOMParser` (`docs/chesscom-dom.md`).
+- **Don't open `/analysis/game/...` URLs.** They start chess.com's Game Review and may use the user's one free review a day.
+- **Logged out, chess.com hides games in progress** (`/game/<id>` redirects to `/play/online`), so live spectating needs a login. The e2e simulates a game in progress by hiding a finished game's result row (then putting it back), and plants the sidebar's profile link to say who "I" am.
+- **chess.com's board swallows its first click** after the page loads; the e2e spends it on an empty square.
+- **Chrome for Testing on macOS needs `--use-mock-keychain`** (puppeteer adds it). Without it Chrome waits on a Keychain prompt and every network request hangs.
+- Branded Chrome ignores `--load-extension`; Chrome for Testing (in `~/.cache/puppeteer/chrome`) doesn't. An unpacked extension's id is the SHA-256 of its path, first 32 hex digits mapped to a–p.
+- chess.com's board takes click-then-click moves; drags from puppeteer don't land, and a board that is still starting drops clicks.
+- Claude in Chrome can't open `chrome://` or `chrome-extension://` pages; `javascript_tool` calls time out at 45 s.
+- The stockfish module may answer synchronously under Node: register the waiter before sending (`Uci.request` does).
+- Golden positions are evaluated from a cold hash, so a game position's eval can differ by a few tenths from the same position mid-game; pick golden moves away from band edges.
 
 ## User context
 
-- chess.com username **bowod28216**: about 800 blitz, 1,250 blitz games on the PubAPI, no Daily games. The PubAPI archive list is at `api.chess.com/pub/player/bowod28216/games/archives`.
-- The user approved downloading sanitized fixtures and playing bot games on their account, and chose to capture in-progress Live games by spectating. Approval for anything else (for example capturing their own live game) has to be asked again.
+- chess.com username **bowod28216**: about 800 blitz, 1,250 blitz games. **Free account: one Game Review a day.** PubAPI archives: `api.chess.com/pub/player/bowod28216/games/archives`.
+- The user approved downloading sanitized fixtures and playing bot games on their account, and chose to capture in-progress Live games by spectating. Anything else (for example capturing their own live game) needs asking again.
+- The user wants work finished and checked before being asked to try it (2026-10-25).

@@ -8,6 +8,8 @@ What the adapter relies on, as observed on 2026-10-24. Selectors live in `src/ad
 |---|---|---|
 | Finished Live game | `/game/live/<id>` | `live-finished-*` |
 | Live game in progress (spectating) | `/game/<id>` (no `/live/`). **The URL does not change when the game ends** | `live-inprogress-spectator-*`, `live-ended-while-watching-*` |
+| Live game, finished, opened as `/game/<id>` | redirects to `/live/game/<id>` (seen logged out, 2026-10-24) | E2E run, no fixture |
+| Watch list (live games of others) | `/play/online/watch` → **Watch** tab; picking a game goes to `/game/<id>`, and when it ends chess.com moves on to the same players' next game at a new `/game/<id>`. Logged out, games in progress aren't shown (`/game/<id>` redirects to `/play/online`) | seen logged in, 2026-10-25 |
 | Daily game, finished or in progress | `/game/daily/<id>` | `daily-*` |
 | Analysis board | `/analysis` | `analysis-*` |
 | Bot game, in progress or finished | `/play/computer` | `bot-*` |
@@ -27,6 +29,8 @@ What the adapter relies on, as observed on 2026-10-24. Selectors live in `src/ad
   - Selected move: `.node-highlight-content.selected` inside the node. **No element is selected at the starting position.**
   - Side lines: nodes like `data-node="1-0"` without `main-line-ply`. The branch point isn't in any attribute; it's only implied by DOM position and the "3…" move number.
 - **Result:** `.game-result` in a `.result-row` at the end of the move list: `1-0`, `0-1`, `1/2-1/2` (with trailing whitespace). It is present only once the game is over: confirmed on the spectated game that ended while I watched.
+- **Me:** the sidebar's profile link, `a[data-user-activity-key="profile"]`, `href="https://www.chess.com/member/<me>"`. Absent when logged out. Present in every fixture (all captured logged in).
+- **Players:** `#board-layout-player-top` / `#board-layout-player-bottom`, each with one `.cc-user-username-component`. Compare names without case. Neither is me ⇒ I'm watching (FP-7).
 - **Game-over modal:** `.game-over-modal-shell-container`. It reappears when a finished game page is reopened. Its header class said `whiteWon` when Black won a bot game, so **don't read the winner from it**.
 - **Clocks:** `.clock-component.clock-white/.clock-black`. `clock-player-turn` **stays on the loser's clock after a game ends**, so it is not an in-progress signal.
 - **Players:** `#board-layout-player-top` and `#board-layout-player-bottom`, each containing `.cc-user-username-component`. The same on every page type. `cc-user-username-white` is a text-colour class, not the side; map top/bottom to colours through the board orientation. On the analysis board the names are the placeholders "White" and "Black".

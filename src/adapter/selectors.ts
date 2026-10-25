@@ -18,6 +18,8 @@ export const MOVE_NODE = '.node[data-node]';
 export const MOVE_NODE_ATTR = 'data-node';
 /** Piece figurine inside a move; the letter is in this attribute and missing from the text. */
 export const FIGURINE_ATTR = 'data-figurine';
+/** The clickable move inside a node; clicking it shows that move on chess.com's board (SYNC-2). */
+export const MOVE_TEXT = '.node-highlight-content';
 /** The highlighted move inside a node. Absent when the starting position is shown. */
 export const SELECTED_MOVE = '.node[data-node] .selected';
 /** Result row at the end of the move list: "1-0", "0-1" or "1/2-1/2". Only present once the game is over. */
@@ -27,3 +29,6 @@ export const GAME_RESULT = '.game-result';
 export const PLAYER_TOP = '#board-layout-player-top';
 export const PLAYER_BOTTOM = '#board-layout-player-bottom';
 export const PLAYER_USERNAME = '.cc-user-username-component';
+
+/** The sidebar's link to my own profile, `https://www.chess.com/member/<me>`. Absent when logged out. */
+export const MY_PROFILE_LINK = 'a[data-user-activity-key="profile"][href*="/member/"]';

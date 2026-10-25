@@ -7,10 +7,15 @@
   "type": "module",
   "scripts": {
     "prebuild": "node scripts/copy-engine.ts",
-    "build": "vite build",
+    "build": "vite build && vite build -c vite.content.config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "bench:node": "node scripts/bench-node.ts"
+    "bench:node": "node scripts/bench-node.ts",
+    "review:node": "node scripts/review-node.ts",
+    "build:book": "node scripts/build-book.ts",
+    "agreement": "node scripts/agreement.ts",
+    "record:golden": "node scripts/record-golden.ts",
+    "e2e": "node scripts/e2e.ts"
   },
   "dependencies": {
     "chess.js": "1.4.0",
@@ -19,7 +24,9 @@
   "devDependencies": {
     "@types/chrome": "0.3.6",
     "@types/node": "24.19.2",
+    "fake-indexeddb": "6.2.5",
     "happy-dom": "21.0.4",
+    "puppeteer-core": "25.13.0",
     "typescript": "7.0.2",
     "vite": "8.3.5",
     "vitest": "5.0.5"

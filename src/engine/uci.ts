@@ -2,6 +2,12 @@
 
 export type Score = { cp: number } | { mate: number };
 
+/** `+1.20`, `-0.35`, `M3` (White mates in 3) or `-M2`, for a score from White's point of view. */
+export function formatScore(s: Score): string {
+  if ('mate' in s) return s.mate > 0 ? `M${s.mate}` : `-M${-s.mate}`;
+  return `${s.cp >= 0 ? '+' : ''}${(s.cp / 100).toFixed(2)}`;
+}
+
 export interface Info {
   depth: number;
   multipv: number;

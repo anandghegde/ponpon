@@ -4,8 +4,10 @@
   "short_name": "PonPon",
   "version": "0.0.1",
   "description": "Turn every pawn into gold. Post-game review for chess.com, with Stockfish running locally.",
-  "permissions": ["sidePanel"],
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": ["https://www.chess.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{ "matches": ["https://www.chess.com/*"], "js": ["content.js"], "run_at": "document_idle" }],
   "side_panel": { "default_path": "src/sidepanel/index.html" },
   "action": { "default_title": "PonPon" },
   "content_security_policy": {

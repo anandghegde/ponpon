@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { classifyPage, type PageState } from '../src/adapter/page-state.ts';
 import { readGame } from '../src/adapter/read.ts';
+import * as S from '../src/adapter/selectors.ts';
 import { replay, sansFromPgn } from '../src/game/replay.ts';
 
 const FIXTURES = 'test/fixtures/chesscom';
@@ -94,7 +95,7 @@ describe('classifyPage', () => {
     'bot-inprogress': 'bot-game',
     'bot-finished': 'bot-game',
     'daily-finished-1045360362': 'finished-game',
-    'daily-inprogress-spectator-1046347836': 'in-progress-vs-human',
+    'daily-inprogress-spectator-1046347836': 'spectating',
     'live-ended-while-watching-185854046964': 'finished-game',
     'live-finished-185251405966': 'finished-game',
     'live-finished-185404401434': 'finished-game',
@@ -102,7 +103,7 @@ describe('classifyPage', () => {
     'live-finished-185689081726': 'finished-game',
     'live-finished-185851072404': 'finished-game',
     'live-finished-185851072404-ply41': 'finished-game',
-    'live-inprogress-spectator-185854046964': 'in-progress-vs-human',
+    'live-inprogress-spectator-185854046964': 'spectating',
   };
 
   it('covers every fixture', () => {
@@ -121,6 +122,14 @@ describe('classifyPage', () => {
     expect(classifyPage(url, doc)).toBe('in-progress-vs-human');
   });
 
+  it('reads /live/game/ID, where /game/ID redirects, as a game against a person', () => {
+    const { doc } = load('live-finished-185851072404');
+    const url = 'https://www.chess.com/live/game/185851072404';
+    expect(classifyPage(url, doc)).toBe('finished-game');
+    doc.querySelectorAll('.game-result').forEach(e => e.remove());
+    expect(classifyPage(url, doc)).toBe('in-progress-vs-human');
+  });
+
   it.each([
     ['https://www.chess.com/puzzles/rated', 'unsupported'],
     ['https://www.chess.com/home', 'unknown'],
@@ -128,6 +137,23 @@ describe('classifyPage', () => {
   ])('%s → %s', (url, state) => {
     const { doc } = load('live-finished-185851072404');
     expect(classifyPage(url, doc)).toBe(state);
+  });
+
+  it.each([
+    ['one of the players is me (names compare without case)', (doc: Document) => {
+      doc.querySelector(`${S.PLAYER_TOP} ${S.PLAYER_USERNAME}`)!.textContent = 'Bowod28216';
+    }],
+    ['I am logged out', (doc: Document) => doc.querySelector(S.MY_PROFILE_LINK)!.remove()],
+    ["a player's name can't be read", (doc: Document) => doc.querySelector(`${S.PLAYER_BOTTOM} ${S.PLAYER_USERNAME}`)!.remove()],
+  ])('counts a game in progress as mine when %s (FP-7)', (_, change) => {
+    const { url, doc } = load('live-inprogress-spectator-185854046964');
+    change(doc);
+    expect(classifyPage(url, doc)).toBe('in-progress-vs-human');
+  });
+
+  it('never counts /play/online as spectating: my own games start there', () => {
+    const { doc } = load('live-inprogress-spectator-185854046964');
+    expect(classifyPage('https://www.chess.com/play/online', doc)).toBe('in-progress-vs-human');
   });
 
   it('is unknown on a game URL without a board', () => {

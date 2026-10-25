@@ -77,7 +77,7 @@ Priority: **P0** = v1.0, **P1** = v1.1, **P2** = later.
 | ID | Requirement | Pri |
 |---|---|---|
 | SRC-1 | A content script on `https://www.chess.com/*` reads the move list (SAN), the starting position, the selected ply, the board orientation, the players and the result from the DOM. Every selector lives in one file (`src/adapter/selectors.ts`), found during the M0 spike. | P0 |
-| SRC-2 | Classify each page as one of: `analysis`, `finished-game`, `bot-game`, `in-progress-vs-human`, `unsupported` (variants, puzzles, lessons), `unknown`. Uses URL patterns plus DOM signals (a visible result, the game-over panel, running clocks). The URL patterns are confirmed in M0. | P0 |
+| SRC-2 | Classify each page as one of: `analysis`, `finished-game`, `bot-game`, `spectating` (FP-7), `in-progress-vs-human` (a game I'm playing, or might be), `unsupported` (variants, puzzles, lessons), `unknown`. Uses URL patterns plus DOM signals (a visible result, the game-over panel, running clocks). The URL patterns are confirmed in M0. | P0 |
 | SRC-3 | Rebuild every position with `chess.js` from the SAN list. If any move fails to parse, stop and show "PonPon can't read this game. Paste the PGN" (principle 1). | P0 |
 | SRC-4 | **Paste PGN or FEN** in the side panel. This works on any page and keeps PonPon useful if chess.com changes its DOM. | P0 |
 | SRC-5 | Watch the move list with a `MutationObserver` and push changes to the side panel within 200 ms (new moves on the analysis board, a bot game, or the result appearing). | P0 |
@@ -89,12 +89,13 @@ Why: chess.com's Fair Play Policy says *"Do not use chess engines, software of a
 
 | ID | Requirement | Pri |
 |---|---|---|
-| FP-1 | On `in-progress-vs-human` and `unknown` pages, PonPon shows no engine output at all: no eval bar, no arrows, no labels, and no grades for earlier moves of the same game. The side panel shows "Game in progress. PonPon reviews it as soon as it ends." The engine doesn't run. | P0 |
+| FP-1 | On `in-progress-vs-human` (a game I'm playing, or might be) and `unknown` pages, PonPon shows no engine output at all: no eval bar, no arrows, no labels, and no grades for earlier moves of the same game. The side panel shows "Game in progress. PonPon reviews it as soon as it ends." The engine doesn't run. | P0 |
 | FP-2 | The guard unlocks only when a result is visible (1-0, 0-1, ½-½, or the game-over panel). Resigning, timing out, aborting and draws all count. | P0 |
-| FP-3 | **Auto-review on game end:** when a game I was watching goes from in-progress to finished, PonPon starts the full review right away and opens the summary. (Setting, on by default.) | P0 |
+| FP-3 | **Auto-review on game end:** when a game I was watching goes from in-progress to finished, PonPon starts the full review right away and opens the summary. (Setting, on by default. When it's off, the game waits for a Review button; a game counts as watched after 3 s in progress, since a finished game's page draws its moves a moment before its result.) The side panel has to be open already: Chrome opens it only from a user gesture, and the engine lives there (ENG-2). | P0 |
 | FP-4 | `bot-game` pages are fully live: suggestions, eval bar and per-move grades while I play. | P0 |
-| FP-5 | While any chess.com tab has an in-progress game against a person, PonPon locks in every tab, including the analysis board and pasted PGNs. The service worker keeps per-tab state. | P1 |
+| FP-5 | While any chess.com tab, in any window, has a game in progress that may be mine, PonPon locks in every tab, including the analysis board, games I'm watching and pasted PGNs. A game page whose content script doesn't answer (a tab opened before PonPon was loaded) also locks, with a notice to reload it. The side panel keeps a port to every chess.com tab. | P0 |
 | FP-6 | A test matrix (§10) covers every page type, plus the moment a game ends. It runs before every release. | P0 |
+| FP-7 | **Watching a game:** a game against people in progress where I'm logged in and neither player is me is reviewed live, like a bot game. It needs my name (the sidebar's link to my profile) and both players' names; anything unread counts as mine, and `/play/online` never counts as watching. Chess.com shows spectators its own engine analysis, and the policy covers players. | P0 |
 
 ### 6.3 Engine (ENG)
 
@@ -122,9 +123,9 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 
 | # | Label (Kanglish) | ಕನ್ನಡ | English | Rule | Colour |
 |---|---|---|---|---|---|
-| 1 | **Pustaka** | ಪುಸ್ತಕ | Book | P′ is in the opening book and every earlier move was book | brown |
-| 2 | **Pon!** | ಪೊನ್ | Brilliant | Δ < 2, **and** a sacrifice (after the first 4 plies of the engine's line from P′, S is down ≥ 2 points of material compared with P), **and** Wb ≤ 90 (not already won), **and** Wa ≥ 50 (sound) | gold |
-| 3 | **Bhale!** | ಭಲೇ | Great (only move) | The played move is the engine's best, **and** the second-best move at P scores ≥ 10 Win% worse, **and** it isn't a recapture on the square of the opponent's last capture, **and** S had more than one legal move | teal |
+| 1 | **Pustaka** | ಪುಸ್ತಕ | Book | P′ is in the opening book, every earlier move was book, **and** Δ < 10 (the book names a few traps, such as Fool's Mate, and walking into one isn't theory; such a move also ends the book) | brown |
+| 2 | **Pon!** | ಪೊನ್ | Brilliant | Δ < 2, **and** a sacrifice (after the first 4 plies of the engine's line from P′, S is down ≥ 2 points of material compared with P, **and** compared with the best other move at P played out as far, unless that move gets mated: a piece that is lost whatever S plays isn't a sacrifice), **and** Wb ≤ 90 (not already won), **and** Wa ≥ 50 (sound) | gold |
+| 3 | **Bhale!** | ಭಲೇ | Great (only move) | The played move is the engine's best, **and** the second-best move at P scores ≥ 10 Win% worse, **and** the second-best doesn't still win clearly (its Win% < 75, about +3), **and** it isn't a recapture on the square of the opponent's last capture, **and** S had more than one legal move | teal |
 | 4 | **Kai Jaaritu** | ಕೈ ಜಾರಿತು | Miss ("slipped from the hand") | The opponent's previous move was *Tappu* or *Ayyo*, **and** Δ ≥ 10 (S didn't punish it) | pink |
 | 5 | **Sakkath** | ಸಖತ್ | Best | The played move equals the engine's best move, or Δ < 1, or it was the only legal move | green |
 | 6 | **Chessnagide** | ಚೆಸ್ನಾಗಿದೆ | Excellent | Δ < 2 | light green |
@@ -168,7 +169,7 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 
 | ID | Requirement | Pri |
 |---|---|---|
-| BRD-1 | Arrows on the chess.com board: the best move in gold, the 2nd and 3rd thinner and translucent. Drawn in an absolutely positioned SVG inside a shadow root, sized from the board's bounding box. `pointer-events: none` always. The arrows follow the suggestion lines live: they redraw at SUG-3's rate as the engine goes deeper and on every position change, and they clear while the guard is locked (FP-1). | P0 |
+| BRD-1 | Arrows on the chess.com board for the position it shows: the best move in gold, the 2nd (and 3rd) thinner and translucent, and, when the move that led there was Good or worse, the move that was better in green (as in chess.com's Game Review). Drawn in an SVG inside a shadow root on a fixed layer that tracks the board's bounding box. `pointer-events: none` always. They clear while the guard is locked (FP-1); the content script checks its own page too (§8). In M1 they come from the review's MultiPV 2 lines, the board's position evaluated first; in M2 they follow the suggestion lines live, redrawing at SUG-3's rate as the engine goes deeper. | P0 |
 | BRD-2 | Correct after the board flips, resizes, the window resizes, or the layout changes (theatre mode, side panel open or closed). Uses `ResizeObserver` and the orientation from SRC-1. | P0 |
 | BRD-3 | A label badge on the destination square of the selected move, as in chess.com's own review. | P1 |
 | BRD-4 | Toggles: arrows on/off, badges on/off. A keyboard shortcut toggles arrows. | P0 |
@@ -195,7 +196,7 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 
 | ID | Requirement | Pri |
 |---|---|---|
-| DATA-1 | Settings in `chrome.storage.local`. Analyses in IndexedDB, keyed by `{game id or PGN hash, engine version, depth}`. Each entry holds each ply's FEN, eval, best move, PV and label. | P0 |
+| DATA-1 | Settings in `chrome.storage.local`. Analyses in IndexedDB, keyed by `{engine version, depth, start position, moves}` (the moves stand in for a game id or PGN hash). Each entry holds each ply's FEN, eval, best move and PV. Labels are graded again when a game opens, so they follow changes to `thresholds.ts`. | P0 |
 | DATA-2 | Cache limit of 500 games, least recently used evicted first. A reviewed game opens again instantly. | P0 |
 | DATA-3 | No network requests except to chess.com pages already open (and the PubAPI, if SRC-6 is built). No analytics, no telemetry, no remote code. | P0 |
 | DATA-4 | Permissions: `sidePanel`, `storage`; host permission `https://www.chess.com/*` only. | P0 |
@@ -215,20 +216,22 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 4. **A bot game.** I play a chess.com bot. Each move gets a grade as I play, and suggestions show for my turn.
 5. **Paste.** I paste a PGN from anywhere and get the full review in the side panel (no board overlay).
 6. **A live game against a person.** The panel says "Game in progress". Nothing else shows until it ends, then flow 1 runs.
+7. **Watching a game.** I open someone else's game from Watch. Each move is graded as it's played; when the game ends the summary shows. If I start a game of my own in another tab, PonPon goes off everywhere until it ends (FP-5).
 
 ## 8. Technical architecture
 
 ```
-chess.com tab                         Service worker                 Side panel (extension page)
-┌──────────────────────────┐   port   ┌─────────────────────┐  port  ┌───────────────────────────────┐
-│ content script           │ ───────► │ routes messages     │ ─────► │ UI (plain TypeScript)         │
-│  adapter: DOM → game     │ ◄─────── │ per-tab page state  │ ◄───── │ review pipeline + classifier  │
-│  state (SRC-1/2/5)       │          │ global lock (FP-5)  │        │ Web Worker: Stockfish 19 WASM │
-│  overlay: arrows, badges │          │ opens side panel    │        │ IndexedDB cache               │
-│  (shadow root, BRD)      │          └─────────────────────┘        └───────────────────────────────┘
-└──────────────────────────┘
+chess.com tab                                 port                Side panel (extension page)
+┌──────────────────────────┐   (chrome.tabs.connect)   ┌───────────────────────────────┐
+│ content script           │ ◄───────────────────────► │ UI (plain TypeScript)         │
+│  adapter: DOM → game     │                           │ review pipeline + classifier  │
+│  state (SRC-1/2/5)       │                           │ Web Worker: Stockfish 19 WASM │
+│  overlay: arrows, badges │                           │ IndexedDB cache               │
+│  (shadow root, BRD)      │                           └───────────────────────────────┘
+└──────────────────────────┘      Service worker: opens the side panel on the toolbar icon
 ```
 
+- **Messaging (decided 2026-10-24).** The side panel connects straight to the content script in its window's active tab and reconnects when the active tab changes. The service worker stays out of the message path: MV3 stops idle workers, which would mean reconnect logic on both ends and per-tab state kept in storage. FP-5 needs every tab's state; the side panel keeps a port to every chess.com tab instead of bringing the worker back in (decided 2026-10-25).
 - **Manifest V3.** `side_panel.default_path`; `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
 - **CSP:** `"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"` (needed to run WASM).
 - **The fair-play decision is made in two places.** The content script classifies the page. The side panel refuses to start the engine unless the latest page state is unlocked. Neither trusts the other's cached state for more than one message.
@@ -253,10 +256,10 @@ chess.com tab                         Service worker                 Side panel 
 | M | Scope | Verify |
 |---|---|---|
 | **M0** Spike | (a) Adapter: read the move list, ply, orientation and state on the analysis board, a finished Live game, a finished Daily game, a bot game, and an in-progress Live game (state only, engine off). Save HTML fixtures for each. (b) Stockfish 19 lite single in a side-panel worker: measure nodes/s and per-position time at depths 12/16/20 | The adapter's SAN list matches the downloaded PGN for 5 of my games; the page-state classification is right on all 5 page types; timings are written to `docs/perf.md` and ENG-4's depths are fixed |
-| **M1** Review MVP | SRC-1–5, FP-1–4 and FP-6, ENG-1–5, CLS-1, CLS-2, CLS-4, CLS-5, REV-1–5, DATA-1–4, paste PGN | 20 of my games reviewed; label agreement with chess.com's Game Review measured (§11); golden tests pass; the FP matrix passes: in-progress = nothing shown and engine idle; result appears = auto-review starts |
-| **M2** Suggestions and board | SUG-1–4, BRD-1, BRD-2, BRD-4, SYNC-1 | Arrows land on the right squares in both orientations at 3 board sizes and after a resize; the panel follows arrow-key navigation; a full bot game played with live grades |
+| **M1** Review MVP | SRC-1–5, FP-1–7, ENG-1–5, CLS-1, CLS-2, CLS-4, CLS-5, REV-1–5, DATA-1–4, paste PGN; brought forward from M2: BRD-1 from the review, BRD-2, BRD-4's arrows toggle, SYNC-1, SYNC-2 | 20 of my games reviewed; label agreement with chess.com's Game Review measured (§11); golden tests pass; the FP matrix passes: in-progress = nothing shown and engine idle; result appears = auto-review starts; a watched game is graded live; a game of mine in another tab locks everything |
+| **M2** Suggestions | SUG-1–4, BRD-1's live suggestion arrows, BRD-4's shortcut and badges toggle | Arrows land on the right squares in both orientations at 3 board sizes and after a resize; the panel follows arrow-key navigation; a full bot game played with live grades |
 | **M3** Polish and v1.0 | SET-1–5, icons and a gold-pawn logo, About/GPL link, a README with the unpacked-install steps | A fresh Chrome profile loads the unpacked extension (chrome://extensions → Load unpacked) and reviews a game in ≤ 3 clicks; FP matrix re-run |
-| **M4** v1.1 | CLS-3, REV-6–8, BRD-3, SYNC-2, FP-5 | Accuracy within ±3 of Lichess's on 10 games exported there; FP-5 locks the analysis board while another tab has a game in progress |
+| **M4** v1.1 | CLS-3, REV-6–8, BRD-3, SYNC-2 | Accuracy within ±3 of Lichess's on 10 games exported there |
 
 ## 11. Success metrics
 
@@ -283,13 +286,25 @@ chess.com tab                         Service worker                 Side panel 
 **Decided 2026-10-24**
 - **Name:** PonPon, shown in Chrome as "PonPon – Chess Move Coach".
 - **Platform:** Chrome, Manifest V3, chess.com only; UI in the side panel, plus a board overlay.
-- **Scope:** analysis only. No engine output during in-progress games against people, Live or Daily. Bot games are live. Auto-review when a game ends.
+- **Scope:** analysis only. No engine output during in-progress games I'm playing, Live or Daily. Bot games and games I'm only watching are live (FP-7, decided 2026-10-25). Auto-review when a game ends.
 - **Engine:** Stockfish 19 lite single-threaded, local. No server.
 - **License:** GPL-3.0 (forced by Stockfish).
 - **Labels:** English by default; the Kanglish and ಕನ್ನಡ sets in §6.4 are options (SET-1).
 - **Distribution:** loaded unpacked for my own use. No Web Store for now.
 - **UI:** plain TypeScript, no framework.
-- **Brilliant and Great:** the common community definitions, not tuned to chess.com (§6.4).
+- **Brilliant and Great:** the common community definitions, not tuned to chess.com (§6.4). Great also needs the second-best move to stop clearly winning (< 75 Win%), so a mate isn't Great when other moves win too.
+- **Messaging:** the side panel talks to the content scripts directly, one port per chess.com tab (FP-5); the service worker only opens the panel (§8).
+- **Label check (§11):** the account is free, so chess.com's labels come from one Game Review a day.
+
+**Decided 2026-10-25** (asked)
+- **Arrows on the board in M1** (BRD-1, BRD-2, SYNC-1, SYNC-2), with a green arrow for the move that was better than the one just played.
+- **Watching a game is reviewed live** (FP-7), with FP-5 brought into M1 as its guard.
+
+**Decided 2026-10-25** (while finishing M1; to confirm)
+- **Book stops at a mistake** (rule 1): the lichess book names Fool's Mate and other traps.
+- **A sacrifice is measured against the best alternative too** (rule 2): on 20 of my games the old rule gave a false *Pon!* for a doomed bishop; the new one gives exactly one, a real exchange sacrifice.
+- **Stored reviews keep the evaluations, not the labels** (DATA-1).
+- **Golden tests (CLS-5):** 32 positions in `test/golden-cases.ts`, engine output recorded once in `test/fixtures/golden-evals.json`.
 
 **Still open:** nothing right now.
 

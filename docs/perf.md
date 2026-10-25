@@ -2,7 +2,7 @@
 
 The M0(b) measurement for ENG-4 and the §9 targets. The code is in `src/engine/bench.ts`. Both runners use the same WASM and the same positions:
 
-- **Chrome:** the side panel (`npm run build`, load `dist/` unpacked, open the panel, Run). This run decides ENG-4.
+- **Chrome:** the side panel (`npm run build`, load `dist/` unpacked, open the panel, Run). This run decides ENG-4. M1 replaced that page with the real panel; check out commit 695c47f to run it again.
 - **Node:** `npm run bench:node`, a baseline to compare against.
 
 ## Setup
