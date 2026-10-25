@@ -1,14 +1,15 @@
-// The side panel: follows the content script in this window's active tab, reviews in a Stockfish Web Worker (ENG-2),
-// renders the Session, and sends the board's arrows (BRD-1) back to the tab.
+// The side panel: follows the content script in this window's active tab, reviews and suggests in a Stockfish Web
+// Worker (ENG-2), renders the Session, and sends the board's arrows (BRD-1) back to the tab.
 import type { PageSnapshot } from '../adapter/snapshot.ts';
 import type { PositionEval } from '../classify/classify.ts';
 import { Uci } from '../engine/uci.ts';
 import { PRESETS, review, type Preset } from '../review/review.ts';
+import { suggest } from '../suggest/suggest.ts';
 import type { PanelMessage } from '../content/content.ts';
 import { boardMarks } from './arrows.ts';
 import { elsewhere, Session, type Source, type View } from './session.ts';
 import { ReviewStore } from './store.ts';
-import { mount } from './view.ts';
+import { mount, type LabelSet } from './view.ts';
 
 const CHESS_COM = /^https:\/\/www\.chess\.com\//;
 /** The engine build; part of the stored reviews' key (DATA-1). */
@@ -20,17 +21,45 @@ worker.onmessage = (e: MessageEvent<string>) => uci.receive(e.data);
 const ready = uci.init({ Hash: 64, Threads: 1 });
 /** Evaluations by FEN for each preset, kept while the panel is open. */
 const caches: Record<Preset, Map<string, PositionEval>> = { fast: new Map(), normal: new Map(), deep: new Map() };
-/** DATA-1: ENG-4's preset, FP-3's auto-review and BRD-4's arrows and badges; SET-2 brings the rest. */
+/** DATA-1 and SET-2: SET-1's labels, ENG-4's preset, SUG-1's lines, FP-3's auto-review and BRD-4's arrows and badges. */
 interface Settings {
+  labels: LabelSet;
   preset: Preset;
+  lines: number;
   autoReview: boolean;
   arrows: boolean;
   badges: boolean;
 }
-const stored = (await chrome.storage.local.get('settings')).settings as Partial<Settings> | undefined;
-const settings: Settings = { preset: 'normal', autoReview: true, arrows: true, badges: true, ...stored };
+const { settings: stored, introSeen } = await chrome.storage.local.get(['settings', 'introSeen']);
+const settings: Settings = {
+  labels: 'english',
+  preset: 'normal',
+  lines: 3,
+  autoReview: true,
+  arrows: true,
+  badges: true,
+  ...(stored as Partial<Settings> | undefined),
+};
+// SET-4: the first-run screen, until "Got it"; About shows it again.
+const showIntro = (on: boolean) => {
+  document.getElementById('intro')!.hidden = !on;
+  document.body.classList.toggle('intro', on);
+};
+showIntro(!introSeen);
 /** A store that fails only costs the instant reopen. */
 const store = ReviewStore.open(ENGINE).catch((e: unknown) => (console.error(e), null));
+const settingsBox = document.getElementById('settings') as HTMLDetailsElement;
+const cacheSize = document.getElementById('cache-size')!;
+
+/** SET-3, while Settings is open. */
+async function showCacheSize(): Promise<void> {
+  if (!settingsBox.open) return;
+  const size = await (await store)?.size().catch((e: unknown) => (console.error(e), undefined));
+  cacheSize.textContent = !size
+    ? 'unavailable'
+    : `${size.games} ${size.games === 1 ? 'game' : 'games'}, ` +
+      (size.bytes < 1e6 ? `${Math.ceil(size.bytes / 1e3)} kB` : `${(size.bytes / 1e6).toFixed(1)} MB`);
+}
 
 let render: (view: View) => void = () => {};
 const session = new Session(
@@ -39,12 +68,17 @@ const session = new Session(
     const cache = caches[settings.preset];
     const db = await store;
     const positions = await db?.get(game, depth).catch((e: unknown) => (console.error(e), undefined));
-    // A stored game is graded again from its evaluations, without waiting for the engine.
-    if (positions) return review(uci, game, { depth, cache: new Map(positions.map((p) => [p.fen, p])), ...opts });
+    // A stored game is graded again from its evaluations, without waiting for the engine. Reviews stored before
+    // M2 have no depth on their positions; the store's key has it.
+    if (positions) return review(uci, game, { depth, cache: new Map(positions.map((p) => [p.fen, { ...p, depth }])), ...opts });
     await ready;
     const r = await review(uci, game, { depth, cache, ...opts });
-    db?.put(game, depth, r.positions).catch((e: unknown) => console.error(e));
+    db?.put(game, depth, r.positions).then(showCacheSize, (e: unknown) => console.error(e));
     return r;
+  },
+  async (game, ply, opts) => {
+    await ready;
+    return suggest(uci, game, ply, opts);
   },
   (view) => {
     render(view);
@@ -56,22 +90,38 @@ render = mount({
   closePaste: () => session.closePaste(),
   review: () => session.review(),
   select: (move) => post(activePort(), { select: move }),
-});
+  pick: (position) => session.pick(position),
+}, settings);
 session.setAutoReview(settings.autoReview);
+session.setLines(settings.lines);
 
+const labelSet = document.getElementById('label-set') as HTMLSelectElement;
 const preset = document.getElementById('preset') as HTMLSelectElement;
+const lines = document.getElementById('lines') as HTMLSelectElement;
 const autoReview = document.getElementById('auto-review') as HTMLInputElement;
 const arrows = document.getElementById('arrows') as HTMLInputElement;
 const badges = document.getElementById('badges') as HTMLInputElement;
+labelSet.value = settings.labels;
 preset.value = settings.preset;
+lines.value = String(settings.lines);
 autoReview.checked = settings.autoReview;
 arrows.checked = settings.arrows;
 badges.checked = settings.badges;
 const save = () => chrome.storage.local.set({ settings }).catch((e: unknown) => console.error(e));
+labelSet.addEventListener('change', () => {
+  settings.labels = labelSet.value as LabelSet;
+  void save();
+  render(session.view);
+});
 preset.addEventListener('change', () => {
   settings.preset = preset.value as Preset;
   void save();
   session.restart();
+});
+lines.addEventListener('change', () => {
+  settings.lines = Number(lines.value);
+  void save();
+  session.setLines(settings.lines);
 });
 autoReview.addEventListener('change', () => {
   settings.autoReview = autoReview.checked;
@@ -85,6 +135,26 @@ for (const box of [arrows, badges]) {
     sendMarks(session.view);
   });
 }
+// BRD-4's shortcut, set in the manifest; the user can change it at chrome://extensions/shortcuts.
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== 'toggle-arrows') return;
+  arrows.checked = !arrows.checked;
+  arrows.dispatchEvent(new Event('change'));
+});
+const shortcut = (await chrome.commands.getAll()).find((c) => c.name === 'toggle-arrows')?.shortcut;
+document.getElementById('shortcut')!.textContent = shortcut ? `(${shortcut})` : '';
+settingsBox.addEventListener('toggle', () => void showCacheSize());
+document.getElementById('clear-cache')!.addEventListener('click', async () => {
+  for (const cache of Object.values(caches)) cache.clear();
+  await (await store)?.clear().catch((e: unknown) => console.error(e));
+  void showCacheSize();
+});
+document.getElementById('intro-done')!.addEventListener('click', () => {
+  showIntro(false);
+  chrome.storage.local.set({ introSeen: true }).catch((e: unknown) => console.error(e));
+});
+document.getElementById('intro-again')!.addEventListener('click', () => showIntro(true));
+document.getElementById('version')!.textContent = chrome.runtime.getManifest().version;
 
 const { id: windowId } = await chrome.windows.getCurrent();
 

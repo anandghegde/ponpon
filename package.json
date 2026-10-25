@@ -1,6 +1,6 @@
 {
   "name": "ponpon",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "description": "PonPon – Chess Move Coach. Post-game review for chess.com with Stockfish running locally.",
   "license": "GPL-3.0",
@@ -13,7 +13,6 @@
     "bench:node": "node scripts/bench-node.ts",
     "review:node": "node scripts/review-node.ts",
     "build:book": "node scripts/build-book.ts",
-    "agreement": "node scripts/agreement.ts",
     "record:golden": "node scripts/record-golden.ts",
     "e2e": "node scripts/e2e.ts"
   },

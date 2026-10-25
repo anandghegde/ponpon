@@ -5,13 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PonPon</title>
     <style>
+      /* SET-5: Noto Sans Kannada (OFL, public/fonts/OFL.txt), cut to the label glyphs with fonttools' pyftsubset. */
+      @font-face {
+        font-family: 'PonPon Kannada';
+        src: url('/fonts/noto-sans-kannada-labels.woff2') format('woff2');
+        font-weight: 400 700;
+        unicode-range: U+0C80-0CFF, U+200C-200D, U+25CC;
+      }
       :root {
         color-scheme: light dark;
         --muted: color-mix(in srgb, currentColor 55%, transparent);
         --line: color-mix(in srgb, currentColor 18%, transparent);
       }
       body {
-        font: 13px/1.4 system-ui, sans-serif;
+        font: 13px/1.4 'PonPon Kannada', system-ui, sans-serif;
         margin: 12px;
       }
       header {
@@ -22,6 +29,27 @@
       h1 {
         font-size: 15px;
         margin: 0 0 8px;
+      }
+      h1 img {
+        width: 18px;
+        height: 18px;
+        vertical-align: -3px;
+        margin-right: 4px;
+      }
+      a {
+        color: inherit;
+      }
+      /* SET-4: the first-run screen stands alone. */
+      body.intro > :not(header, #intro) {
+        display: none;
+      }
+      #legend {
+        list-style: none;
+        padding: 0;
+        margin: 4px 0 8px;
+      }
+      #legend li {
+        margin: 3px 0;
       }
       p {
         margin: 4px 0;
@@ -120,6 +148,72 @@
       #paste-error {
         color: #dc3b3b;
       }
+      .eng-head {
+        display: flex;
+        justify-content: space-between;
+      }
+      .eval {
+        font-weight: 600;
+      }
+      .depth {
+        color: var(--muted);
+      }
+      .bar {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #403d39;
+        box-shadow: inset 0 0 0 1px var(--line);
+        margin: 4px 0 6px;
+      }
+      .bar .fill {
+        height: 100%;
+        background: #f0f0f0;
+      }
+      .eng-line {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .eng-line .score {
+        display: inline-block;
+        min-width: 3.4em;
+        margin-right: 6px;
+        font-variant-numeric: tabular-nums;
+      }
+      /* REV-7: the eval graph, coloured like the eval bar. */
+      .graph {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin: 6px 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .g-black {
+        fill: #403d39;
+      }
+      .g-white {
+        fill: #f0f0f0;
+      }
+      .g-mid {
+        stroke: #8a8a8a;
+        stroke-width: 0.5;
+        stroke-dasharray: 2 2;
+      }
+      .g-selected {
+        stroke: #d4a017;
+        stroke-width: 1.5;
+      }
+      .graph circle {
+        fill: var(--c);
+        stroke: #403d39;
+        stroke-width: 1;
+      }
+      /* REV-8 */
+      .moments .move {
+        display: inline-flex;
+      }
       /* Label colours (PRD §6.4). */
       .l-book { --c: #a0703c; }
       .l-brilliant { --c: #d4a017; }
@@ -129,19 +223,41 @@
       .l-good { --c: #8aa58a; }
       .l-inaccuracy { --c: #e1b81f; }
       .l-mistake { --c: #ee8a2a; }
+      .l-miss { --c: #e0679a; }
       .l-blunder { --c: #dc3b3b; }
     </style>
   </head>
   <body>
     <header>
-      <h1>PonPon</h1>
+      <h1><img src="/icons/logo.svg" alt="" />PonPon</h1>
       <span id="status"></span>
     </header>
+    <section id="intro" class="card" hidden>
+      <p class="head">Turn every pawn into gold</p>
+      <p>
+        PonPon reviews your chess.com games with Stockfish running on this computer. Every move gets a label, and the
+        best moves show as arrows on the board. Open a finished game, the analysis board or a bot game, then this panel.
+        Reviews are unlimited, and nothing leaves your computer.
+      </p>
+      <p class="head">When it's locked</p>
+      <p>
+        While you're playing a person, Live or Daily, PonPon shows nothing and its engine stays off: chess.com's Fair
+        Play Policy bans engines during play and closes accounts for it. It unlocks when the result appears. Bot games,
+        the analysis board and games you're only watching aren't locked. If a game of yours is in progress in another
+        tab, PonPon stays off everywhere until it ends.
+      </p>
+      <p class="head">What the labels mean</p>
+      <ul id="legend"></ul>
+      <p class="line">Pick English, Kanglish or ಕನ್ನಡ labels in Settings; hover a label to see its other names.</p>
+      <button id="intro-done">Got it</button>
+    </section>
     <p id="notice" class="card" hidden></p>
     <p id="held" class="card" hidden>The game is over. <button id="review-now">Review it</button></p>
     <p id="pasted" hidden>Pasted game · <button id="close-paste">Close</button></p>
     <section id="summary" class="card" hidden></section>
     <div id="moves"></div>
+    <!-- Below the move list: the live lines change its height several times a second, and the moves mustn't move. -->
+    <section id="engine" class="card" hidden></section>
     <section id="detail" class="card" hidden></section>
     <details id="paste" hidden>
       <summary>Paste a PGN or FEN</summary>
@@ -153,6 +269,16 @@
       <summary>Settings</summary>
       <p>
         <label
+          >Labels
+          <select id="label-set">
+            <option value="english">English</option>
+            <option value="kanglish">Kanglish</option>
+            <option value="kannada">ಕನ್ನಡ</option>
+          </select></label
+        >
+      </p>
+      <p>
+        <label
           >Strength
           <select id="preset">
             <option value="fast">Fast (depth 12)</option>
@@ -161,10 +287,35 @@
           </select></label
         >
       </p>
+      <p>
+        <label
+          >Suggestion lines
+          <select id="lines">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select></label
+        >
+      </p>
       <p><label><input type="checkbox" id="auto-review" /> Review a game as soon as it ends</label></p>
-      <p><label><input type="checkbox" id="arrows" /> Arrows on the board</label></p>
+      <p><label><input type="checkbox" id="arrows" /> Arrows on the board <span id="shortcut" class="line"></span></label></p>
       <p><label><input type="checkbox" id="badges" /> Badges on the board (?? blunder, ? mistake, ?! inaccuracy, ! great, !! brilliant)</label></p>
-      <p class="line">Gold: the best move in the position on the board (fainter: the second best). Green: what was better than the move just played.</p>
+      <p class="line">Gold: the best move in the position on the board (fainter: the next best). Green: what was better than the move just played.</p>
+      <p>Stored reviews: <span id="cache-size"></span> <button id="clear-cache">Clear</button></p>
+    </details>
+    <details id="about">
+      <summary>About</summary>
+      <p>
+        PonPon <span id="version"></span>. Stockfish 19 runs on this computer, and nothing is sent anywhere. Labels use
+        Lichess's Win% model: how much each move changes your winning chances.
+      </p>
+      <p>
+        PonPon is free software under the
+        <a href="https://github.com/anandghegde/ponpon/blob/main/LICENSE" target="_blank">GPL-3.0</a>. Source code:
+        <a href="https://github.com/anandghegde/ponpon" target="_blank">github.com/anandghegde/ponpon</a>.
+      </p>
+      <p class="line">Stockfish (GPL-3.0), chess.js (BSD-2-Clause), lichess-org/chess-openings (CC0), Noto Sans Kannada (OFL-1.1).</p>
+      <button id="intro-again">Show the intro again</button>
     </details>
     <script type="module" src="./main.ts"></script>
   </body>

@@ -6,17 +6,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as S from '../src/adapter/selectors.ts';
 import { snapshot } from '../src/adapter/snapshot.ts';
 import { replay } from '../src/game/replay.ts';
+import type { Line, PositionEval } from '../src/classify/classify.ts';
 import type { Game, GradedMove } from '../src/review/review.ts';
 import {
   elsewhere,
+  LIVE_MS,
   MISMATCH_GRACE_MS,
   Session,
   WATCHED_MS,
   type OtherTab,
   type Reviewer,
   type Source,
+  type Suggester,
   type View,
 } from '../src/sidepanel/session.ts';
+import type { SuggestOptions } from '../src/suggest/suggest.ts';
 
 type PageSource = Extract<Source, { kind: 'page' }>;
 
@@ -41,17 +45,37 @@ function edited(fixture: string, edit: (game: NonNullable<PageSource['snapshot']
   return source;
 }
 
+/** A fixture's page with chess.com's board at another position of the same game. */
+function at(fixture: string, ply: number): PageSource {
+  return edited(fixture, (g) => {
+    g.ply = ply;
+    g.placement = replay(g.sans)[ply].split(' ')[0];
+  });
+}
+
 function setup() {
-  const runs: { game: Game; signal: AbortSignal; opts: Parameters<Reviewer>[1]; finish(moves?: GradedMove[]): void }[] = [];
+  const runs: {
+    game: Game;
+    signal: AbortSignal;
+    opts: Parameters<Reviewer>[1];
+    finish(moves?: GradedMove[], positions?: PositionEval[]): void;
+  }[] = [];
   const reviewer: Reviewer = (game, opts) =>
     new Promise((resolve, reject) => {
       const { signal } = opts;
-      runs.push({ game, signal: signal!, opts, finish: (moves = []) => resolve({ positions: [], moves }) });
+      runs.push({ game, signal: signal!, opts, finish: (moves = [], positions = []) => resolve({ positions, moves }) });
       signal!.addEventListener('abort', () => reject(signal!.reason));
     });
+  const searches: { fen: string; opts: SuggestOptions; finish(): void }[] = [];
+  const suggester: Suggester = (game, ply, opts) =>
+    new Promise((resolve, reject) => {
+      searches.push({ fen: replay(game.sans, game.startFen)[ply], opts, finish: () => resolve({ depth: 22, lines: [] }) });
+      opts.signal!.addEventListener('abort', () => reject(opts.signal!.reason));
+    });
   let view!: View;
-  const session = new Session(reviewer, (v) => (view = v));
-  return { session, runs, view: () => view };
+  let views = 0;
+  const session = new Session(reviewer, suggester, (v) => ((view = v), views++));
+  return { session, runs, searches, view: () => view, views: () => views };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -198,13 +222,28 @@ describe('the position on the board (BRD-1)', () => {
     expect(view().ply).toBe(41);
   });
 
-  it('has no board position for a pasted game', async () => {
+  it('has no board position for a pasted game, whose last position comes first', async () => {
     const { session, runs, view } = setup();
     session.setSource({ kind: 'other-site' });
     session.paste(PGN);
     await settle();
-    expect(runs[0].opts.focus).toBeUndefined();
-    expect(view().ply).toBeNull();
+    expect(runs[0].opts.focus).toBe(7);
+    expect(view()).toMatchObject({ ply: null, current: 7 });
+  });
+
+  it('is evaluated next when the board moves to a position the review has not reached', async () => {
+    const { session, runs } = setup();
+    session.setSource(page('live-finished-185851072404-ply41'));
+    await settle();
+    runs[0].opts.onPosition!(41, { fen: 'x', lines: [] });
+    runs[0].opts.onPosition!(10, { fen: 'y', lines: [] });
+    session.setSource(at('live-finished-185851072404-ply41', 10));
+    await settle();
+    expect(runs).toHaveLength(1);
+    session.setSource(at('live-finished-185851072404-ply41', 20));
+    await settle();
+    expect(runs[0].signal.aborted).toBe(true);
+    expect(runs[1].opts.focus).toBe(20);
   });
 });
 
@@ -443,5 +482,163 @@ describe('principle 1: never review the wrong position', () => {
     await vi.advanceTimersByTimeAsync(MISMATCH_GRACE_MS);
     expect(view().notice).toBeNull();
     expect(runs).toHaveLength(1);
+  });
+});
+
+describe('suggestions (SUG-1, SUG-2, SUG-3)', () => {
+  const REVIEW: Line[] = [
+    { score: { cp: 20 }, pv: ['a2a3'] },
+    { score: { cp: 10 }, pv: ['h2h3'] },
+  ];
+  const LIVE: Line[] = [
+    { score: { cp: 30 }, pv: ['b2b3'] },
+    { score: { cp: 25 }, pv: ['g2g3'] },
+    { score: { cp: 5 }, pv: ['c2c3'] },
+  ];
+  const FIXTURE = 'live-finished-185851072404-ply41';
+  const evals = (sans: string[]): PositionEval[] => replay(sans).map((fen) => ({ fen, lines: REVIEW, depth: 16 }));
+
+  /** A finished game on the board at ply 41, its review done. */
+  async function reviewed() {
+    vi.useFakeTimers();
+    const t = setup();
+    t.session.setSource(page(FIXTURE));
+    await vi.advanceTimersByTimeAsync(0);
+    const positions = evals(t.runs[0].game.sans);
+    t.runs[0].finish([], positions);
+    await vi.advanceTimersByTimeAsync(0);
+    return { ...t, positions };
+  }
+
+  it('wait for the review, then search the board position, the review lines showing until the search goes deeper', async () => {
+    vi.useFakeTimers();
+    const { session, runs, searches, view } = setup();
+    session.setSource(page(FIXTURE));
+    await vi.advanceTimersByTimeAsync(0);
+    runs[0].opts.onPosition!(41, { fen: 'x', lines: REVIEW, depth: 16 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches).toHaveLength(0);
+    expect(view().suggestion).toMatchObject({ fen: 'x', depth: 16, lines: REVIEW, searching: false });
+
+    const positions = evals(runs[0].game.sans);
+    runs[0].finish([], positions);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches).toHaveLength(1);
+    expect(searches[0]).toMatchObject({ fen: positions[41].fen, opts: { multipv: 3 } });
+    expect(view().suggestion).toMatchObject({ depth: 16, lines: REVIEW, searching: true });
+    searches[0].opts.onLines!({ depth: 14, lines: LIVE });
+    await vi.advanceTimersByTimeAsync(LIVE_MS);
+    expect(view().suggestion).toMatchObject({ depth: 16, lines: REVIEW });
+    searches[0].opts.onLines!({ depth: 17, lines: LIVE });
+    await vi.advanceTimersByTimeAsync(LIVE_MS);
+    expect(view().suggestion).toMatchObject({ depth: 17, lines: LIVE, searching: true });
+    searches[0].finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view().suggestion).toMatchObject({ depth: 17, lines: LIVE, searching: false });
+  });
+
+  it('reach the view at most 4 times a second (SUG-3)', async () => {
+    const { searches, view, views } = await reviewed();
+    const before = views();
+    // A second of lines, one every 50 ms.
+    for (let depth = 17; depth < 37; depth++) {
+      searches[0].opts.onLines!({ depth, lines: LIVE });
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    expect(views() - before).toBeLessThanOrEqual(5);
+    await vi.advanceTimersByTimeAsync(LIVE_MS);
+    expect(view().suggestion!.depth).toBe(36);
+  });
+
+  it('follow the board: a new position cancels the old search (ENG-2)', async () => {
+    const { session, searches, view, positions } = await reviewed();
+    session.setSource(at(FIXTURE, 40));
+    expect(searches[0].opts.signal!.aborted).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches[1].fen).toBe(positions[40].fen);
+    expect(view()).toMatchObject({ current: 40, suggestion: { fen: positions[40].fen } });
+  });
+
+  it('give way to the review of a move just played', async () => {
+    vi.useFakeTimers();
+    const { session, runs, searches } = setup();
+    session.setSource(page('bot-inprogress'));
+    await vi.advanceTimersByTimeAsync(0);
+    const sans = runs[0].game.sans;
+    runs[0].finish([], evals(sans));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches).toHaveLength(1);
+    session.setSource(
+      edited('bot-inprogress', (g) => {
+        g.sans = [...sans, 'Nf3'];
+        g.ply = 9;
+        g.placement = replay(g.sans)[9].split(' ')[0];
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches[0].opts.signal!.aborted).toBe(true);
+    expect(runs).toHaveLength(2);
+    expect(searches).toHaveLength(1);
+  });
+
+  it("don't run where the game is over", async () => {
+    vi.useFakeTimers();
+    const { session, runs, searches, view } = setup();
+    session.setSource({ kind: 'other-site' });
+    session.paste(PGN);
+    await vi.advanceTimersByTimeAsync(0);
+    const positions = evals(runs[0].game.sans);
+    positions[7] = { fen: positions[7].fen, lines: [], end: 'checkmate' };
+    runs[0].finish([], positions);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches).toHaveLength(0);
+    expect(view().suggestion).toMatchObject({ end: 'checkmate', lines: [] });
+  });
+
+  it('follow the position picked in a pasted game', async () => {
+    vi.useFakeTimers();
+    const { session, runs, searches, view } = setup();
+    session.setSource({ kind: 'other-site' });
+    session.paste(PGN);
+    await vi.advanceTimersByTimeAsync(0);
+    const positions = evals(runs[0].game.sans);
+    runs[0].finish([], positions);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches[0].fen).toBe(positions[7].fen);
+    session.pick(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches[1].fen).toBe(positions[2].fen);
+    expect(view()).toMatchObject({ current: 2, ply: null });
+  });
+
+  it('stop while the panel is hidden, and search again when it is back unless the search had finished (ENG-5)', async () => {
+    const { session, searches } = await reviewed();
+    session.setVisible(false);
+    expect(searches[0].opts.signal!.aborted).toBe(true);
+    session.setVisible(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches).toHaveLength(2);
+    searches[1].finish();
+    await vi.advanceTimersByTimeAsync(0);
+    session.setVisible(false);
+    session.setVisible(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches).toHaveLength(2);
+  });
+
+  it('stop the moment another tab may have a game of mine (FP-5)', async () => {
+    const { session, searches, view } = await reviewed();
+    session.setElsewhere('game');
+    expect(searches[0].opts.signal!.aborted).toBe(true);
+    expect(view().suggestion).toBeNull();
+  });
+
+  it('show as many lines as the setting, and search again with that many', async () => {
+    const { session, searches, view } = await reviewed();
+    session.setLines(1);
+    expect(searches[0].opts.signal!.aborted).toBe(true);
+    expect(view().suggestion!.lines).toEqual(REVIEW.slice(0, 1));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(searches[1].opts.multipv).toBe(1);
   });
 });

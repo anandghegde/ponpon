@@ -65,6 +65,20 @@ export class ReviewStore {
     await done(tx);
   }
 
+  /** SET-3: the games stored and about how much space they take. */
+  async size(): Promise<{ games: number; bytes: number }> {
+    const tx = this.#db.transaction('reviews');
+    const r: IDBRequest<Entry[]> = tx.objectStore('reviews').getAll();
+    await done(tx);
+    return { games: r.result.length, bytes: r.result.reduce((n, e) => n + JSON.stringify(e).length, 0) };
+  }
+
+  async clear(): Promise<void> {
+    const tx = this.#db.transaction('reviews', 'readwrite');
+    tx.objectStore('reviews').clear();
+    await done(tx);
+  }
+
   #key(game: Game, depth: number): Entry['key'] {
     return [this.#engine, depth, game.startFen ?? '', game.sans.join(' ')];
   }

@@ -28,7 +28,7 @@ PonPon is for analysis. It shows engine output on finished games, the analysis b
 - G1. Within about 60 seconds of a game ending, show which moves cost me and what I should have played, without leaving chess.com or clicking anything.
 - G2. Unlimited free reviews, all computed locally.
 - G3. Next-move suggestions that show up in under 1 second and keep improving while I look.
-- G4. Labels that are fun and still accurate: within one category of chess.com's Game Review on most moves (§11).
+- G4. Labels that are fun and still accurate.
 - G5. My chess.com account is never at risk from using PonPon.
 
 ### Non-goals (v1)
@@ -102,7 +102,7 @@ Why: chess.com's Fair Play Policy says *"Do not use chess engines, software of a
 | ID | Requirement | Pri |
 |---|---|---|
 | ENG-1 | Stockfish 19 via `nmrugg/stockfish.js` v19.0.1, **lite single-threaded build** (`stockfish-19-lite-single.js` + `.wasm`, about 1.7 MB, no cross-origin isolation needed). Bundled in the extension; no remote code. | P0 |
-| ENG-2 | The engine runs in a Web Worker owned by the side panel. One engine instance with a job queue: review jobs and suggestion jobs. A new game cancels the old review. A position change cancels the old suggestion. | P0 |
+| ENG-2 | The engine runs in a Web Worker owned by the side panel. One engine instance with a job queue: review jobs and suggestion jobs. A new game cancels the old review. A position change cancels the old suggestion. The review goes first: the suggestion starts once the review is done, and a board that moves to a position the review hasn't reached yet has that position evaluated next. | P0 |
 | ENG-3 | Normalise every score to White's point of view (UCI scores are from the side to move). Keep mate scores as `{mate: n}` and never convert them to large centipawn numbers. | P0 |
 | ENG-4 | Strength presets for review: **Fast** depth 12, **Normal** depth 16 (default), **Deep** depth 18. Fixed by M0's timings (`docs/perf.md`): about 2 s, 31 s and 52 s for a 40-move game in Chrome on my Mac. Depth 20 took 100 s, outside §9's review budget. | P0 |
 | ENG-5 | The engine pauses when the side panel is hidden or the tab isn't chess.com, and resumes when it comes back (battery). | P0 |
@@ -114,7 +114,7 @@ For a move by side S from position P to position P′:
 
 - `cp` is the engine's evaluation from S's point of view. **Win%** = `50 + 50 × (2 / (1 + exp(−0.00368208 × cp)) − 1)` (Lichess's model). Mate for S = 100, mate against S = 0.
 - `Wb` = Win% of P (the best line). `Wa` = Win% of P′ from S's point of view. **Drop** `Δ = max(0, Wb − Wa)`.
-- **Move accuracy** = `clamp(103.1668 × exp(−0.04354 × Δ) − 3.1669, 0, 100)` (Lichess).
+- **Move accuracy** (Lichess's, for REV-6) = 100 when the move loses nothing, else `clamp(103.1668 × exp(−0.04354 × Δ′) − 3.1669 + 1, 0, 100)`, where Δ′ is the drop with evaluations capped at ±10 pawns and a mate counted as 10 pawns (lila's `AccuracyPercent`, including its +1 "uncertainty bonus"). The labels use the uncapped Δ.
 - Material counts P=1, N=3, B=3, R=5, Q=9.
 
 Rules are checked in order and the first match wins. All thresholds live in `src/classify/thresholds.ts`. The side panel shows the English names by default (SET-1).
@@ -126,7 +126,7 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 | 1 | **Pustaka** | ಪುಸ್ತಕ | Book | P′ is in the opening book, every earlier move was book, **and** Δ < 10 (the book names a few traps, such as Fool's Mate, and walking into one isn't theory; such a move also ends the book) | brown |
 | 2 | **Pon!** | ಪೊನ್ | Brilliant | Δ < 2, **and** a sacrifice (after the first 4 plies of the engine's line from P′, S is down ≥ 2 points of material compared with P, **and** compared with the best other move at P played out as far, unless that move gets mated: a piece that is lost whatever S plays isn't a sacrifice), **and** Wb ≤ 90 (not already won), **and** Wa ≥ 50 (sound) | gold |
 | 3 | **Bhale!** | ಭಲೇ | Great (only move) | The played move is the engine's best, **and** the second-best move at P scores ≥ 10 Win% worse, **and** the second-best doesn't still win clearly (its Win% < 75, about +3), **and** it isn't a recapture on the square of the opponent's last capture, **and** S had more than one legal move | teal |
-| 4 | **Kai Jaaritu** | ಕೈ ಜಾರಿತು | Miss ("slipped from the hand") | The opponent's previous move was *Tappu* or *Ayyo*, **and** Δ ≥ 10 (S didn't punish it) | pink |
+| 4 | **Kai Jaaritu** | ಕೈ ಜಾರಿತು | Miss ("slipped from the hand") | The opponent's previous move was *Tappu*, *Ayyo* or itself a *Kai Jaaritu*, **and** Δ ≥ 10 (S didn't punish it), **and** the played move isn't the engine's best | pink |
 | 5 | **Sakkath** | ಸಖತ್ | Best | The played move equals the engine's best move, or Δ < 1, or it was the only legal move | green |
 | 6 | **Chessnagide** | ಚೆಸ್ನಾಗಿದೆ | Excellent | Δ < 2 | light green |
 | 7 | **Sari** | ಸರಿ | Good | 2 ≤ Δ < 5 | grey-green |
@@ -160,9 +160,9 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 | ID | Requirement | Pri |
 |---|---|---|
 | SUG-1 | For the current position (selected ply on a finished game, the live position on the analysis board or in a bot game), run `go infinite` with MultiPV N (setting 1–3, default 3). | P0 |
-| SUG-2 | Each line shows its eval (`+1.2`, `M3`), its first 8 plies in SAN, and its depth. The first result shows in under 1 s; it keeps refining until depth 22 or 15 s, then stops. | P0 |
-| SUG-3 | UI updates are throttled to 4 per second. Lines don't reorder until their depth is ≥ 10, so they don't jump around. | P0 |
-| SUG-4 | Eval bar for the current position (White's point of view, mate shown as `M3`). | P0 |
+| SUG-2 | Each line shows its eval (`+1.2`, `M3`), its first 8 plies in SAN, and its depth. The first result shows in under 1 s; it keeps refining until depth 22 or 15 s, then stops. The first result is the review's evaluation of the position (ENG-2); the live lines replace it once they are deeper. | P0 |
+| SUG-3 | UI updates are throttled to 4 per second. Lines don't reorder until their depth is ≥ 10, so they don't jump around (the review's lines are depth 12 or more, so live lines only show from deeper than that). | P0 |
+| SUG-4 | Eval bar for the current position (White's point of view, mate shown as `M3`), in the side panel above the lines; White's share fills from the left. | P0 |
 | SUG-5 | Clicking a line steps through it on a small board in the side panel (chessground). | P2 |
 
 ### 6.7 Board overlay (BRD)
@@ -172,7 +172,7 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 | BRD-1 | Arrows on the chess.com board for the position it shows: the best move in gold, the 2nd (and 3rd) thinner and translucent, and, when the move that led there was Good or worse, the move that was better in green (as in chess.com's Game Review). Drawn in an SVG inside a shadow root on a fixed layer that tracks the board's bounding box. `pointer-events: none` always. They clear while the guard is locked (FP-1); the content script checks its own page too (§8). In M1 they come from the review's MultiPV 2 lines, the board's position evaluated first; in M2 they follow the suggestion lines live, redrawing at SUG-3's rate as the engine goes deeper. | P0 |
 | BRD-2 | Correct after the board flips, resizes, the window resizes, or the layout changes (theatre mode, side panel open or closed). Uses `ResizeObserver` and the orientation from SRC-1. | P0 |
 | BRD-3 | A label badge on the destination square of the selected move, as in chess.com's own review. | P1 |
-| BRD-4 | Toggles: arrows on/off, badges on/off. A keyboard shortcut toggles arrows. | P0 |
+| BRD-4 | Toggles: arrows on/off, badges on/off. A keyboard shortcut toggles arrows: Alt+Shift+A (⌥⇧A on a Mac), changeable at chrome://extensions/shortcuts. | P0 |
 
 ### 6.8 Board sync (SYNC)
 
@@ -256,15 +256,14 @@ chess.com tab                                 port                Side panel (ex
 | M | Scope | Verify |
 |---|---|---|
 | **M0** Spike | (a) Adapter: read the move list, ply, orientation and state on the analysis board, a finished Live game, a finished Daily game, a bot game, and an in-progress Live game (state only, engine off). Save HTML fixtures for each. (b) Stockfish 19 lite single in a side-panel worker: measure nodes/s and per-position time at depths 12/16/20 | The adapter's SAN list matches the downloaded PGN for 5 of my games; the page-state classification is right on all 5 page types; timings are written to `docs/perf.md` and ENG-4's depths are fixed |
-| **M1** Review MVP | SRC-1–5, FP-1–7, ENG-1–5, CLS-1, CLS-2, CLS-4, CLS-5, REV-1–5, DATA-1–4, paste PGN; brought forward: BRD-1 from the review, BRD-2, BRD-3, BRD-4's arrows and badges toggles, SYNC-1, SYNC-2 | 20 of my games reviewed; label agreement with chess.com's Game Review measured (§11); golden tests pass; the FP matrix passes: in-progress = nothing shown and engine idle; result appears = auto-review starts; a watched game is graded live; a game of mine in another tab locks everything |
+| **M1** Review MVP | SRC-1–5, FP-1–7, ENG-1–5, CLS-1, CLS-2, CLS-4, CLS-5, REV-1–5, DATA-1–4, paste PGN; brought forward: BRD-1 from the review, BRD-2, BRD-3, BRD-4's arrows and badges toggles, SYNC-1, SYNC-2 | 20 of my games reviewed; golden tests pass; the FP matrix passes: in-progress = nothing shown and engine idle; result appears = auto-review starts; a watched game is graded live; a game of mine in another tab locks everything |
 | **M2** Suggestions | SUG-1–4, BRD-1's live suggestion arrows, BRD-4's shortcut | Arrows land on the right squares in both orientations at 3 board sizes and after a resize; the panel follows arrow-key navigation; a full bot game played with live grades |
-| **M3** Polish and v1.0 | SET-1–5, icons and a gold-pawn logo, About/GPL link, a README with the unpacked-install steps | A fresh Chrome profile loads the unpacked extension (chrome://extensions → Load unpacked) and reviews a game in ≤ 3 clicks; FP matrix re-run |
+| **M3** Polish and v1.0 | SET-1–5, icons and a gold-pawn logo, About/GPL link, a README with the unpacked-install steps | A fresh Chrome profile loads the unpacked extension (chrome://extensions → Load unpacked) and reviews a game in ≤ 3 clicks |
 | **M4** v1.1 | CLS-3, REV-6–8 | Accuracy within ±3 of Lichess's on 10 games exported there |
 
 ## 11. Success metrics
 
-- **Label agreement:** on 20 of my games, ≥ 85% of moves land in the same category as chess.com's Game Review or one next to it. Chess.com's model is proprietary, so exact matches aren't the goal. Brilliant and Great are left out of this check, since they follow community definitions (§6.4).
-- **Accuracy:** within ±5 points of chess.com's on ≥ 80% of those games (v1.0), and within ±3 of Lichess's (v1.1).
+- **Accuracy:** within ±3 points of Lichess's on 10 games exported there (v1.1).
 - **Speed:** the §9 targets hold on my Mac.
 - **Safety:** zero engine output on in-progress games against people, across the FP matrix and a week of my own use.
 - **Use:** I review most of my games with PonPon instead of chess.com's Game Review.
@@ -294,7 +293,6 @@ chess.com tab                                 port                Side panel (ex
 - **UI:** plain TypeScript, no framework.
 - **Brilliant and Great:** the common community definitions, not tuned to chess.com (§6.4). Great also needs the second-best move to stop clearly winning (< 75 Win%), so a mate isn't Great when other moves win too.
 - **Messaging:** the side panel talks to the content scripts directly, one port per chess.com tab (FP-5); the service worker only opens the panel (§8).
-- **Label check (§11):** the account is free, so chess.com's labels come from one Game Review a day.
 
 **Decided 2026-10-25** (asked)
 - **Arrows on the board in M1** (BRD-1, BRD-2, SYNC-1, SYNC-2), with a green arrow for the move that was better than the one just played.
@@ -306,6 +304,32 @@ chess.com tab                                 port                Side panel (ex
 - **A sacrifice is measured against the best alternative too** (rule 2): on 20 of my games the old rule gave a false *Pon!* for a doomed bishop; the new one gives exactly one, a real exchange sacrifice.
 - **Stored reviews keep the evaluations, not the labels** (DATA-1).
 - **Golden tests (CLS-5):** 32 positions in `test/golden-cases.ts`, engine output recorded once in `test/fixtures/golden-evals.json`.
+
+**Decided 2026-10-25** (while building M2; to confirm)
+- **The review goes first, then the live search** (ENG-2). One engine; the suggestion for the current position starts once the review is done, so a game's grades arrive as fast as in M1. While the review runs, the board's position is evaluated next whenever the board moves to one it hasn't reached.
+- **The first lines are the review's** (SUG-2): depth 16 at Normal, 2 lines. Live lines replace them once deeper, with the third line.
+- **The engine gets the game's moves** (`position fen <start> moves …`), in reviews and suggestions, so it sees repetitions. Without them, playing PonPon's best move against a bot walked into a threefold repetition in a won game.
+- **Eval bar in the side panel** (SUG-4), not on chess.com's board.
+- **A pasted game's suggestions** follow the move picked in the panel; its last position by default.
+- **No suggestions on a side line** of the analysis board: PonPon reads the main line only (principle 1).
+- **"Suggestion lines" (1–3) is in the panel's Settings now**, with the strength preset; SET-2's full screen is M3.
+
+**Decided 2026-10-25** (asked, after M2)
+- **No label check against chess.com's Game Review.** The §11 agreement metric, `npm run agreement` and the `agreement/` games are gone.
+- **No tests from here on.** The existing tests and `scripts/e2e.ts` stay in the repo but aren't run or updated; work is checked with `npm run typecheck` and `npm run build`.
+
+**Decided 2026-10-25** (while building M3 and M4; to confirm)
+- **Label hover (SET-1):** the other two names, with the Kanglish word's meaning, e.g. "Swalpa “a little” · ಸ್ವಲ್ಪ". On a move in the list the hover starts with the chosen name.
+- **The first-run screen (SET-4)** replaces the panel until "Got it"; About has "Show the intro again". The labels' meanings on it come from `thresholds.ts`.
+- **Cache size (SET-3)** counts the stored games and their size as JSON. Clear also empties the evaluations held while the panel is open.
+- **Kannada font (SET-5):** Noto Sans Kannada pinned to normal width, weight axis 400–700 kept, cut to the labels' characters plus the Kannada vowel signs (ೊ, ೋ and ೈ are shaped from parts that aren't in the labels), 42 kB. Applied by `unicode-range`, so Latin text keeps the system font.
+- **Logo:** a gold pawn (`public/icons/logo.svg`), drawn to PNGs at 16, 32, 48 and 128 px for the toolbar and `chrome://extensions`; also in the panel's header.
+- **About** links the GPL-3.0 and the source at github.com/anandghegde/ponpon (the repo's origin), and names the bundled libraries and font.
+- **Version 1.0.0** in the manifest and `package.json`.
+- **Kai Jaaritu (CLS-3)** also follows an unpunished Kai Jaaritu, so a run of missed chances is a run of misses; it never goes on the engine's own best move. Its badge is **×** in pink, and it gets the green "better" arrow.
+- **Game accuracy (REV-6)** follows lila exactly: positions' evaluations, capped, windows of moves ÷ 10 (2–8) positions, weights clamped to 0.5–12, harmonic mean with a floor of 1. Book moves count, as on Lichess, so REV-5's "book moves excluded" no longer applies.
+- **Eval graph (REV-7)** in the summary card, coloured like the eval bar, from the same capped Win%. Dots for *Pon!*, *Bhale!*, *Swalpa*, *Tappu*, *Kai Jaaritu* and *Ayyo*; a gold line marks the selected move.
+- **Key moments (REV-8)** only list Inaccuracy or worse (Δ ≥ 5), biggest first, so a clean game shows none rather than three Excellent moves.
 
 **Still open:** nothing right now.
 

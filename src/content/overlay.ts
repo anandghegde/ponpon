@@ -3,11 +3,11 @@
 // scrolling, layout changes and flips. Nothing is added inside chess.com's own elements.
 import * as S from '../adapter/selectors.ts';
 
-/** `best`: the best move in the position on the board; `second`: the next best; `better`: what should have been played instead of the move that led here. */
+/** `best`: the best move in the position on the board; `second`, `third`: the next best; `better`: what should have been played instead of the move that led here. */
 export interface Arrow {
   from: string;
   to: string;
-  kind: 'best' | 'second' | 'better';
+  kind: 'best' | 'second' | 'third' | 'better';
 }
 
 /** A label's symbol on the destination square of the move shown on the board, as in chess.com's review. */
@@ -25,6 +25,7 @@ export interface Marks {
 const LOOK: Record<Arrow['kind'], { color: string; width: number; opacity: number }> = {
   best: { color: '#d4a017', width: 0.2, opacity: 0.9 },
   second: { color: '#d4a017', width: 0.11, opacity: 0.5 },
+  third: { color: '#d4a017', width: 0.09, opacity: 0.35 },
   better: { color: '#3f9b3f', width: 0.2, opacity: 0.85 },
 };
 const SVG = 'http://www.w3.org/2000/svg';
@@ -81,6 +82,7 @@ function arrow(a: Arrow, flipped: boolean): SVGElement {
   p.setAttribute('fill', color);
   p.setAttribute('opacity', String(opacity));
   p.dataset.kind = a.kind;
+  p.dataset.move = a.from + a.to;
   return p;
 }
 

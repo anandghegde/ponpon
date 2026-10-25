@@ -19,7 +19,9 @@ const graded = (ply: number, label: GradedMove['label'], san: string): GradedMov
 const ALL = { arrows: true, badges: true };
 const arrowsOf = (v: View) => boardMarks(v, ALL).arrows;
 
+/** A view with the board at `ply`, its lines the review's, as the Session gives them before the live search goes deeper. */
 function view(ply: number | null, moves: GradedMove[], positions: PositionEval[], pasted = false): View {
+  const p = ply === null ? undefined : positions[ply];
   return {
     notice: null,
     canPaste: true,
@@ -29,6 +31,8 @@ function view(ply: number | null, moves: GradedMove[], positions: PositionEval[]
     status: 'done',
     held: false,
     ply,
+    current: ply,
+    suggestion: p ? { fen: p.fen, depth: 16, lines: p.lines, searching: false } : null,
   };
 }
 
@@ -46,6 +50,17 @@ describe('arrows (BRD-1)', () => {
 
   it.each(['book', 'brilliant', 'great', 'best', 'excellent'] as const)('has no "better" arrow after a %s move', (label) => {
     expect(arrowsOf(view(2, opening(label), positions)).map((a) => a.kind)).toEqual(['best', 'second']);
+  });
+
+  it('follows the live lines, up to three (SUG-2)', () => {
+    const live = position('', 'g1f3', 'b1c3', 'f1c4').lines;
+    const v = { ...view(2, opening('mistake'), positions), suggestion: { fen: '', depth: 20, lines: live, searching: true } };
+    expect(arrowsOf(v)).toEqual([
+      { from: 'e7', to: 'e5', kind: 'better' },
+      { from: 'g1', to: 'f3', kind: 'best' },
+      { from: 'b1', to: 'c3', kind: 'second' },
+      { from: 'f1', to: 'c4', kind: 'third' },
+    ]);
   });
 
   it('waits for positions the review has not reached', () => {

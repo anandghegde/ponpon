@@ -1,80 +1,82 @@
-# Handoff: PonPon M1 (Review MVP), built and checked live
+# Handoff: PonPon M3 (v1.0) and M4 (v1.1), built
 
-*2026-10-25. Read `docs/PRD.md` §10 (M1 row), §6.4 and §13 first, then `docs/chesscom-dom.md`.*
+*2026-10-25. Read `docs/PRD.md` §6.4, §6.5, §6.9, §10 and §13 (the newest "to confirm" block), then `docs/chesscom-dom.md`.*
 
-## Where M1 stands
+## Where things stand
 
-Everything in M1's scope is built and checked on real chess.com pages, except the one check that needs chess.com's own labels.
+Nothing since M1 is committed (branch `m1-review`; the user chose not to commit yet). Everything below builds (`npm run build` → `dist/`) and `npm run typecheck` is clean. Per the user, there are no tests any more; the checks were the build, the typecheck, a render of the real `view.ts` in headless Chrome from a real review, and `npm run review:node`.
 
-| Part | Status | How it was checked |
+| Part | Status | Checked |
 |---|---|---|
-| Classifier (CLS-1, CLS-2, ENG-3) | **Done** | `test/classify.test.ts`, plus two fixes found on real games: Book stops at a mistake, and a sacrifice is measured against the best alternative too (PRD §13, 2026-10-25) |
-| Opening book (CLS-4) | **Done** | 7,982 positions from lichess-org/chess-openings at `a6189a3`; `npm run build:book` regenerates it |
-| Golden tests (CLS-5) | **Done, labels to hand-check** | 32 positions in `test/golden-cases.ts`: book, Fool's and Scholar's Mates, mates for and against, stalemate, a lost position, only moves, recaptures, a real sacrifice (a desperado that forces stalemate), fake sacrifices, and every drop band, half of them from the user's games. Engine output recorded once (`npm run record:golden`), so `test/golden.test.ts` runs offline |
-| Review pipeline (REV-1, REV-4, REV-5, ENG-2) | **Done** | `test/review.test.ts` with the real engine |
-| Content script, messaging, page states (SRC-1–5, FP-1, FP-2) | **Done** | Fixtures, and live: `npm run e2e` |
-| Side panel (REV-2–4, SRC-4 PGN and FEN, FP-3, ENG-5) | **Done** | `test/session.test.ts` and `npm run e2e` |
-| Settings (ENG-4 preset, FP-3 auto-review; DATA-1, DATA-4) | **Done** | In the panel's Settings; `chrome.storage.local`; `storage` permission |
-| IndexedDB cache (DATA-1, DATA-2) | **Done** | `test/store.test.ts` (fake-indexeddb) and live: a reviewed game reopens in about 200 ms |
-| Watching a game live (FP-7) and the other-tab lock (FP-5) | **Done** (asked, 2026-10-25) | Adapter tests (I'm a player, logged out, a name unread, `/play/online`), session tests, and `npm run e2e` with a planted profile link |
-| Arrows and badges on the board, panel ↔ board sync (BRD-1–3, BRD-4 toggles, SYNC-1, SYNC-2; asked) | **Done** | `test/arrows.test.ts`; `npm run e2e`: arrows over the right squares, ← on chess.com moves the card and arrows, a panel click moves chess.com's board, none on a locked page, cleared by the page itself when it turns into my game |
-| FP matrix (FP-6) | **Done** | `test/session.test.ts`, and `npm run e2e`: 38 live checks, all passing on 2026-10-25 |
-| 20 of the user's games reviewed | **Done** | `agreement/`: the latest 20 games, PGNs and Normal-depth evaluations |
-| Label agreement with chess.com (§11) | **Waiting on chess.com labels** | `npm run agreement` compares as soon as `agreement/<id>.chesscom.txt` files exist (format in `agreement/README.md`). The free account allows one Game Review a day |
+| M2 (suggestions, live arrows, shortcut) | Built | e2e 47/48 before the "no tests" decision; the fix for the one failure (engine card moved below the move list) never got an e2e run |
+| Removed: label agreement with chess.com's Game Review | Done | `scripts/agreement.ts`, `agreement/` and `npm run agreement` deleted; PRD G4, §10 (M1), §11 and §13 updated |
+| SET-1 labels in English, Kanglish or ಕನ್ನಡ, hover shows the other two and the Kanglish meaning | Done | Rendered: summary, move card |
+| SET-2 settings | Done | Labels, strength, suggestion lines, auto-review, arrows, badges, stored reviews |
+| SET-3 stored reviews: count, size, Clear | Done | Typecheck only (needs IndexedDB in the extension) |
+| SET-4 first-run screen | Done | Rendered at 360 px |
+| SET-5 Noto Sans Kannada subset (42 kB, `public/fonts/`, OFL beside it) | Done | Rendered side by side with the full font: identical shapes |
+| Gold-pawn logo and icons (16/32/48/128), About with GPL and source links, README with unpacked install | Done | Icons viewed at 16 and 128 px on light and dark |
+| Version 1.0.0 | Done | manifest and package.json |
+| CLS-3 Kai Jaaritu (Miss), badge ×, pink | Done | `review:node`: unpunished blunders become misses |
+| REV-6 Lichess's game accuracy | Done | Ported from lila's `AccuracyPercent.gameAccuracy` and scalalib's `Maths`. M4's own check (±3 of Lichess on 10 games exported there) wasn't run |
+| REV-7 eval graph, REV-8 key moments | Done | Rendered from a real review; clicking selects moves (wired like the move list, not clicked in the render) |
 
-`npx vitest run` → 165/165, `npm run typecheck` clean, `npm run build` → `dist/`, `npm run e2e` → 38/38. Branch `m1-review` on origin.
+## What you'll see (new)
 
-## What the live run covers (`npm run e2e`, about 4 minutes)
-
-A finished game reviewed at Normal (63 moves in 22 s, first label 0.5 s after the review starts) · reopened from the store (~200 ms) · Fast preset, kept across panel reloads · chess.com home locked (`unknown`) · puzzles `unsupported` · another site: PGN paste, FEN paste, bad paste refused · a game that ends while watched: nothing shown and engine idle while in progress, review 120 ms after the result appears · auto-review off: the ended game waits for "Review it", a finished game opened later still reviews · empty analysis board shows the position, moves graded as played · someone else's game graded live while in progress, nothing held when it ends · my own game in progress locked · a game of mine in another window locks the analysis board until it closes · a guest bot game graded live · another tab stops the review and it resumes from the cache · a hidden panel pauses and resumes · no network requests from the panel.
+- **First open:** a one-screen intro (what PonPon does, the lock, the labels). "Got it" hides it; Settings → About → "Show the intro again".
+- **Settings:** Labels (English / Kanglish / ಕನ್ನಡ) at the top; "Stored reviews: N games, X MB · Clear" at the bottom.
+- **About:** version, Win% model, GPL-3.0 and source links, credits.
+- **Summary card:** an eval graph under the opening (click to jump), and "Key moments" under the table.
+- **Labels:** Miss (*Kai Jaaritu*, pink ×) after an unpunished mistake. Accuracy is now Lichess's, book moves included.
+- The gold pawn in the toolbar, on `chrome://extensions` and in the panel's header.
 
 ## Next steps
 
-1. **User:** reload the unpacked extension (chrome://extensions → PonPon → reload) and any open chess.com tabs, then use it. Report anything that looks wrong.
-2. **User:** check the 32 golden labels (`npx vitest run test/golden.test.ts` lists them by name; each name says why).
-3. **User, one a day:** after a Game Review on chess.com, put its labels in `agreement/<id>.chesscom.txt`, then `npm run agreement`. With Claude in Chrome connected, Claude can read them off the review page instead.
-4. Then M2: live suggestions (`go infinite`, MultiPV 3, eval bar) with arrows that deepen as the engine searches, and BRD-4's shortcut.
+1. **User:** `npm run build`, reload PonPon at `chrome://extensions` and any chess.com tabs. Look over the intro, Settings (label sets, Clear), the summary's graph and key moments, and a game with a Miss.
+2. **Waiting on the user:** the two known gaps below. Both need a look at chess.com's analysis board in the user's Chrome first (not asked yet).
+3. Confirm the decisions in PRD §13's newest block and the M2 one before it.
 
-## Decisions made (check with the user if any matter)
+## Known gaps
 
-Earlier, asked: Great's second guard (Scholar's 4.Qxf7# stays Great); the panel talks to the content script directly; FP-3 needs the panel open.
+- **Side lines on the analysis board:** no lines or arrows there (M2 decision 8). `test/fixtures/chesscom/analysis-variation-selected.html` has one side line of one move: a `.variation-row` after the main-line row, nodes `data-node="1-0"`, the branch only in the move number (`3...`). Nested lines aren't captured. A plan that fails safe: build the side line's moves from the move numbers, then accept them only if the result matches the board's placement (`readPlacement`); the session then needs a live search for a position that isn't on the main line.
+- **`/analysis?fen=…`** reads as "can't read this game": the adapter assumes the standard start. Unknown: whether `fen` stays in the URL after moves, and where a board set up by hand keeps its start position.
 
-Made while building, not asked:
-1. **Book stops at a mistake** (PRD rule 1): the lichess book names Fool's Mate and other traps, so 2.g4?? was "Book". A book move with Δ ≥ 10 is graded normally and ends the book.
-2. **A sacrifice is measured against P and against the best other move** played out as far (PRD rule 2), unless that move gets mated. On the user's 20 games the old rule gave a false Brilliant for a bishop that was lost anyway (17…Kc7); the alternative alone gave four more false ones (captures that grabbed less than a greedy alternative). Now there is one, a real exchange sacrifice.
-3. **Great is common, about 2.6 per game**, mostly taking a piece left hanging; that follows the approved rule (only move, second best ≥ 10 worse and < 75). Left as is; Great is outside the §11 check.
-4. **Stored reviews keep evaluations, not labels** (PRD DATA-1 updated): labels are graded again on open, so they follow `thresholds.ts`. The key is `[engine build, depth, start FEN, SANs]`. A game that grew replaces its shorter versions (a bot game takes one place, not one per move).
-5. **Settings in the panel for now:** Strength (Fast/Normal/Deep) and "Review a game as soon as it ends". Changing the strength reviews the shown game again (or reopens it from the store). SET-2's full screen is M3.
-6. **Auto-review off:** a game that ends while watched waits for "Review it". A game counts as watched after 3 s in progress, because a finished game's page draws its moves a moment before its result row (PRD FP-3 updated).
-7. **FEN paste** reviews the one position: its eval and two best lines.
-8. **`/live/game/<id>`** is a game page (chess.com redirects `/game/<id>` there once a game is over, at least logged out).
-9. **The panel connects as soon as the content script says it's ready**, not only on the tab's load event; chess.com pages can take many seconds to finish loading. A port that drops after answering means the page is navigating: the panel waits, locked, without "Reload the page".
-10. **Dev dependencies:** `fake-indexeddb` 6.2.5 (store tests), `puppeteer-core` 25.13.0 (e2e). Both pinned to releases at least two weeks old.
-11. **Watching a game is reviewed live (FP-7, asked).** `spectating` needs my name (sidebar profile link) and both players' names, none equal; anything unread is `in-progress-vs-human`. `/play/online` is never `spectating`.
-12. **FP-5 lives in the panel, not the service worker:** the panel keeps a port to every chess.com tab in every window. It locks on another tab that is `in-progress-vs-human`, a game URL that hasn't answered yet (briefly, while it loads), or a game URL whose content script never answers ("Reload or close it"). Discarded tabs don't count. Incognito tabs are invisible to PonPon unless it's allowed there.
-13. **Arrows (asked).** Gold = best move in the position on chess.com's board, faint gold = second best, green = what was better than the move that led there (only after Good or worse). They come from the review (depth 16, MultiPV 2); the review evaluates the board's position and the one before it first, and the panel shows positions as they arrive. The layer is `<ponpon-arrows>` (open shadow root) fixed over the board, re-placed every animation frame while shown. The panel's selected move follows chess.com's board (SYNC-1); clicking a move in the panel clicks chess.com's own move (`.node-highlight-content`) (SYNC-2). A badge (!!, !, ?!, ?, ??, label colour) sits on the top-right corner of the square the shown move went to (BRD-3); none for book/best/excellent/good. Settings has separate "Arrows" and "Badges" switches. Label symbols and colours live in `classify.ts` (`LABEL_SYMBOLS`, `LABEL_COLORS`); the panel's CSS repeats the colours.
+## Decisions
+
+M3 and M4's are in PRD §13 ("while building M3 and M4; to confirm"). M2's are in the block before it, with the reasons in this file's history (`git log -p handoff.md` once committed).
+
+## Decisions from M1 (asked or confirmed earlier)
+
+Earlier, asked: Great's second guard (Scholar's 4.Qxf7# stays Great); the panel talks to the content script directly; FP-3 needs the panel open; arrows and badges on the board in M1; watching a game is reviewed live (FP-7).
+
+Made while building M1, not asked: book stops at a mistake; a sacrifice is measured against the best alternative too; Great is common (about 2.6 a game); stored reviews keep evaluations, not labels; settings live in the panel for now; with auto-review off a game counts as watched after 3 s; FEN paste reviews the one position; `/live/game/<id>` is a game page; the panel connects as soon as the content script says it's ready; FP-5 lives in the panel (a port per chess.com tab); arrows: gold best, faint gold second, green "better" after Good or worse; badges on the target square's top-right corner. Details are in `docs/PRD.md` §13 and in this file's history (`git log -p handoff.md`).
 
 ## What's in the repo
 
 ```
-public/manifest.json      MV3: sidePanel, storage; host permission https://www.chess.com/*; content script content.js
+public/manifest.json      MV3: sidePanel, storage; host https://www.chess.com/*; content script; commands; icons; 1.0.0
+public/icons/             logo.svg (the gold pawn) and icon-16/32/48/128.png, drawn with rsvg-convert
+public/fonts/             noto-sans-kannada-labels.woff2 (SET-5) and OFL.txt
+README.md                 install (unpacked), features, the lock, development, the font's subset command
 vite.config.ts            side panel + background → dist/
 vite.content.config.ts    the content script on its own, as one IIFE
 scripts/build-book.ts     npm run build:book
 scripts/review-node.ts    npm run review:node -- <pgn> [fast|normal|deep]
-scripts/record-golden.ts  npm run record:golden: engine output for test/golden-cases.ts
-scripts/agreement.ts      npm run agreement [-- latest <n>]: §11 label agreement (agreement/README.md)
-scripts/e2e.ts            npm run e2e: the live FP matrix in Chrome for Testing (npm run build first)
+scripts/record-golden.ts  (tests: not used any more)
+scripts/e2e.ts            (tests: not used any more)
 scripts/bench-node.ts     M0 engine benchmark under Node
 src/adapter/              selectors, readGame, classifyPage + isUnlocked, snapshot()
-src/content/content.ts    observes the DOM while a panel is connected; announces itself on load
-src/classify/             thresholds.ts (every number), classify.ts, book.ts + book.json
-src/review/review.ts      PRESETS, review() (skips the engine when every position is cached), summarise()
-src/sidepanel/session.ts  panel state: guard, paste, auto-review hold, one review at a time, pause/resume
-src/sidepanel/store.ts    ReviewStore: IndexedDB, 500 games, LRU
-src/sidepanel/view.ts     rendering; main.ts wires tabs, ports, settings, the store and the engine worker
-agreement/                the user's latest 20 games: PGN + evaluations; chess.com labels go here
-test/                     adapter, engine, classify, review, session, store, golden (+ golden-cases.ts)
+src/content/              content.ts: observes the DOM while a panel is connected; overlay.ts: arrows and badge layer
+src/classify/             thresholds.ts (every number), classify.ts (labels in 3 sets, Miss, capped Win%), book.ts + book.json
+src/engine/uci.ts         UCI client, parseInfo, positionCommand (start + moves)
+src/review/review.ts      PRESETS, review(), summarise() with Lichess's game accuracy
+src/suggest/suggest.ts    suggest(): go infinite, MultiPV, whole iterations, depth 22 or 15 s
+src/sidepanel/session.ts  panel state: guard, paste, auto-review hold, review then live search, 4 updates a second
+src/sidepanel/arrows.ts   what the board shows: best moves from the panel's lines, "better", badge
+src/sidepanel/store.ts    ReviewStore: IndexedDB, 500 games, LRU, size(), clear()
+src/sidepanel/view.ts     rendering: label sets, intro legend, summary with graph and key moments, moves, engine card
+src/sidepanel/main.ts     wires tabs, ports, settings, intro, cache, the shortcut, the store and the engine worker
+test/                     kept but not run or maintained
 ```
 
 ## Gotchas (learned the hard way)
@@ -86,12 +88,22 @@ test/                     adapter, engine, classify, review, session, store, gol
 - **Chrome for Testing on macOS needs `--use-mock-keychain`** (puppeteer adds it). Without it Chrome waits on a Keychain prompt and every network request hangs.
 - Branded Chrome ignores `--load-extension`; Chrome for Testing (in `~/.cache/puppeteer/chrome`) doesn't. An unpacked extension's id is the SHA-256 of its path, first 32 hex digits mapped to a–p.
 - chess.com's board takes click-then-click moves; drags from puppeteer don't land, and a board that is still starting drops clicks.
+- **Promotion:** chess.com opens a picker over the target square; the queen is `.promotion-piece.wq` (or `bq`) on that square.
+- **Flip:** chess.com's visible button is `button[aria-label="Flip Board"]` (there's a hidden `#board-controls-flip` too).
+- **The guest bot** on `/play/computer` is Martinfoot (250); Start, then Play; the guest has White.
+- **A key press from CDP never reaches Chrome's extension shortcuts**; check `chrome.commands.getAll()` instead.
+- **Anything above the move list that changes height** moves the moves under the pointer; puppeteer's `click(…, { delay })` catches it, `element.click()` doesn't.
 - Claude in Chrome can't open `chrome://` or `chrome-extension://` pages; `javascript_tool` calls time out at 45 s.
 - The stockfish module may answer synchronously under Node: register the waiter before sending (`Uci.request` does).
 - Golden positions are evaluated from a cold hash, so a game position's eval can differ by a few tenths from the same position mid-game; pick golden moves away from band edges.
+- Stockfish prints lines it hasn't searched again yet at the previous depth (`depth − 1`) in the same burst; an iteration is complete only when every line has the same depth (`suggest.ts`).
+- **Headless Chrome's `--screenshot` hangs on a page that runs a module script** (fine on static HTML). Drive it with puppeteer-core instead (`--allow-file-access-from-files` for a `file://` page).
+- **Subsetting the Kannada font:** keep the vowel-sign range (`U+0CBC-0CCD, U+0CD5-0CD6`), or ೊ, ೋ and ೈ break: they're shaped from parts that aren't in the labels (README, Development).
 
 ## User context
 
 - chess.com username **bowod28216**: about 800 blitz, 1,250 blitz games. **Free account: one Game Review a day.** PubAPI archives: `api.chess.com/pub/player/bowod28216/games/archives`.
-- The user approved downloading sanitized fixtures and playing bot games on their account, and chose to capture in-progress Live games by spectating. Anything else (for example capturing their own live game) needs asking again.
+- The user approved downloading sanitized fixtures and playing bot games on their account, and chose to capture in-progress Live games by spectating. Anything else (for example capturing their own live game) needs asking again. The e2e's bot game runs as a logged-out guest, not on the account.
 - The user wants work finished and checked before being asked to try it (2026-10-25).
+- **No tests** (2026-10-25): don't write, run or fix vitest, `npm run e2e` or the golden tests. The files stay; `test/` is out of `tsconfig.json`, so `npm run typecheck` covers `src` and `scripts` only. Check work with `npm run typecheck` and `npm run build`.
+- **The user doesn't care about chess.com's Game Review**: the label-agreement check is gone (`scripts/agreement.ts`, `agreement/`, §11's metric).

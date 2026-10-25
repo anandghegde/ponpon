@@ -38,6 +38,14 @@ describe('review under Node', () => {
     expect(r.positions[6].lines[0].score).toEqual({ mate: 1 });
   });
 
+  it("gives the engine the game's moves, so it sees a repetition", async () => {
+    // Black, a queen down, has seen the start position twice: bringing the knight back draws at once, and Black takes it.
+    const startFen = 'rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    const r = await review(uci, { sans: ['Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3', 'Nf6', 'Ng1'], startFen }, { depth: 10 });
+    expect(r.positions[7].lines[0].score).toEqual({ cp: expect.closeTo(0) });
+    expect(r.positions[7].lines[0].pv[0]).toBe('f6g8');
+  });
+
   it('stops on abort, and a second run with the same cache resumes', async () => {
     const sans = sansFromPgn(readFileSync('test/fixtures/pgn/185404401434.pgn', 'utf8')).slice(0, 16);
     const cache = new Map<string, PositionEval>();

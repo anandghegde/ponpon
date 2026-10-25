@@ -3,7 +3,9 @@
 // Chrome only opens a real side panel from a user gesture, so the panel page runs in its own window, patched to
 // follow the other window's active tab. Logged out, chess.com hides games in progress, so a game in progress is
 // simulated: a finished game's result row is hidden as it renders, then put back, and a planted profile link says
-// who "I" am. Uses the network; takes about 5 minutes.
+// who "I" am. M2's checks follow the live suggestions: arrows over the right squares in both orientations at three
+// board sizes, the panel following chess.com's arrow keys, and a whole bot game played with PonPon's own best moves.
+// Uses the network; takes about 8 minutes.
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -28,6 +30,8 @@ interface PanelState {
   detail: string | null;
   moves: number;
   graded: number;
+  /** The engine card (SUG-2, SUG-4): the position it's for, its depth, its lines' first moves. */
+  engine: { current: number | null; depth: number; searching: boolean; ucis: string[]; eval: string } | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -57,22 +61,86 @@ try {
   check('Finished game reviewed at Normal', !done.timedOut, `${done.moves} moves in ${(done.ms / 1000).toFixed(1)} s`);
 
   // Arrows on the board (BRD-1, BRD-2), and the panel and the board following each other (SYNC-1, SYNC-2).
+  const clicked = Date.now();
   await panel.$eval('#moves [data-ply="12"]', (e) => (e as HTMLElement).click());
   const synced = await until((s) => !!s.detail?.startsWith('7. f4'), 5000, 50);
-  await sleep(500);
+  // The review is done: the live search takes over from its lines once it goes deeper (SUG-1, SUG-2).
+  const deeper = await until((s) => s.engine?.current === 13 && s.engine.depth > 16 && s.engine.ucis.length === 3, 10000, 50);
+  await sleep(300);
   const drawn = await arrowsOnPage();
   check(
     'A move clicked in the panel shows on the board, with its arrows (SYNC-2, BRD-1)',
-    !synced.timedOut && drawn.kinds.join() === 'better,best,second' && drawn.onBoard,
+    !synced.timedOut && drawn.kinds.join() === 'better,best,second,third' && drawn.onBoard,
     drawn.kinds.join(', '),
   );
   check('…and a ?? badge on the corner of f4, where the blunder went (BRD-3)', drawn.badge === '??' && drawn.badgeSquare === 'f4', `${drawn.badge} on ${drawn.badgeSquare}`);
+  check('Suggestions go deeper than the review, with 3 lines (SUG-1, SUG-2)', !deeper.timedOut, `depth ${deeper.engine?.depth} after ${deeper.ms} ms`);
+  const stopped = await until((s) => s.engine?.current === 13 && !s.engine.searching, 20000, 100);
+  const searched = Date.now() - clicked;
+  check(
+    '…and stop at depth 22 or after 15 s (SUG-2)',
+    !stopped.timedOut && (stopped.engine!.depth === 22 || (searched >= 14000 && searched <= 17000)),
+    `depth ${stopped.engine?.depth}, ${(searched / 1000).toFixed(1)} s`,
+  );
+  const liveArrows = await arrowsOnPage();
+  check(
+    'Arrows follow the live lines (BRD-1)',
+    liveArrows.moves.slice(1).join() === stopped.engine!.ucis.map((u) => u.slice(0, 4)).join(),
+    `${liveArrows.moves.slice(1).join(' ')} for ${stopped.engine!.ucis.join(' ')}`,
+  );
   await tab.screenshot({ path: join(shots, 'arrows.png') });
+
+  // BRD-2: arrows over the right squares at three board sizes, in both orientations, after each resize.
+  const tabCdp = await tab.createCDPSession();
+  const { windowId: tabWindow } = await tabCdp.send('Browser.getWindowForTarget');
+  const placed: Awaited<ReturnType<typeof arrowGeometry>>[] = [];
+  for (const [width, height] of [[800, 700], [1300, 900], [1800, 1200]]) {
+    await tabCdp.send('Browser.setWindowBounds', { windowId: tabWindow, bounds: { width, height } });
+    await sleep(1000);
+    placed.push(await arrowGeometry());
+    await flipBoard();
+    await sleep(1000);
+    placed.push(await arrowGeometry());
+    await flipBoard();
+  }
+  await tabCdp.send('Browser.setWindowBounds', { windowId: tabWindow, bounds: { width: 1300, height: 900 } });
+  await sleep(1000);
+  check(
+    'Arrows land on the right squares in both orientations at 3 board sizes (BRD-2)',
+    placed.every((g) => g.ok) && new Set(placed.map((g) => g.size)).size === 3 && placed.filter((g) => g.flipped).length === 3,
+    placed.map((g) => `${g.size}px${g.flipped ? ' flipped' : ''} ${g.ok ? `${g.arrows} ok` : g.detail || 'no arrows'}`).join('; '),
+  );
+
+  // SYNC-1 with chess.com's arrow keys: the card, the lines and the arrows move with the board.
   await tab.focus('body');
   await tab.keyboard.press('ArrowLeft');
-  const stepped = await until((s) => !!s.detail?.startsWith('6…'), 5000, 50);
-  await sleep(500);
-  check('Stepping back on chess.com moves the card and the arrows (SYNC-1)', !stepped.timedOut && (await arrowsOnPage()).kinds.length > 0, stepped.detail ?? '');
+  const stepped = await until((s) => !!s.detail?.startsWith('6…') && s.engine?.current === 12, 5000, 20);
+  check('Stepping back on chess.com moves the card and the lines (SYNC-1)', !stepped.timedOut, `${stepped.ms} ms: ${stepped.detail}`);
+  for (let i = 0; i < 3; i++) {
+    await tab.keyboard.press('ArrowLeft');
+    await sleep(100);
+  }
+  const pressed = Date.now();
+  const followed = await until((s) => s.engine?.current === 9 && s.engine.ucis.length > 0, 5000, 20);
+  check('First lines within 1 s of the board moving (SUG-2)', !followed.timedOut && Date.now() - pressed <= 1000, `${Date.now() - pressed} ms`);
+  await sleep(600);
+  const after = await state();
+  const keyed = await arrowsOnPage();
+  check(
+    '…and the arrows with them',
+    keyed.moves[keyed.kinds.indexOf('best')] === after.engine?.ucis[0].slice(0, 4),
+    `${keyed.kinds.join(', ')}: best ${keyed.moves[keyed.kinds.indexOf('best')]}`,
+  );
+  // Real clicks, held like a person's, while the live lines re-render the panel 4 times a second.
+  const landed: number[] = [];
+  for (const ply of [20, 30, 40, 25, 35]) {
+    await panel.click(`#moves [data-ply="${ply}"]`, { delay: 150 });
+    if (!(await until((s) => s.engine?.current === ply + 1, 3000, 50)).timedOut) landed.push(ply);
+    await sleep(700);
+  }
+  check('Clicks in the move list land while the lines update', landed.length === 5, `missed ${[20, 30, 40, 25, 35].filter((p) => !landed.includes(p)).join(', ') || 'none'}`);
+  await panel.$eval('#moves [data-ply="11"]', (e) => (e as HTMLElement).click());
+  await until((s) => s.engine?.current === 12, 5000, 50);
   await setMarks('arrows', false);
   await sleep(500);
   const noArrows = await arrowsOnPage();
@@ -82,6 +150,12 @@ try {
   check('Badges turn off (BRD-4)', (await arrowsOnPage()).badge === null, '');
   await setMarks('arrows', true);
   await setMarks('badges', true);
+  const command = await panel.evaluate(async () => ({
+    shortcut: (await chrome.commands.getAll()).find((c) => c.name === 'toggle-arrows')?.shortcut ?? '',
+    listening: chrome.commands.onCommand.hasListeners(),
+  }));
+  // Chrome's own shortcuts can't be pressed from a script, so this checks that Chrome assigned it and the panel listens.
+  check("The arrows' shortcut is assigned and the panel listens for it (BRD-4)", command.shortcut !== '' && command.listening, command.shortcut);
 
   panel = await openPanel();
   const again = await until((s) => s.summary !== null, 5000);
@@ -183,6 +257,7 @@ try {
   await other.close();
   check('…until it closes', !(await until((s) => s.graded === 4, 10000, 50)).timedOut, '');
 
+  // A whole bot game (FP-4, M2): PonPon's best move every turn until the game ends, each move graded as it's played.
   await go('https://www.chess.com/play/computer');
   await sleep(5000);
   for (const label of ['Start', 'Play']) {
@@ -190,10 +265,32 @@ try {
     await sleep(2500);
   }
   await wakeBoard();
-  for (const [from, to] of [['e2', 'e4'], ['g1', 'f3'], ['f1', 'c4']]) await move(from, to, 2);
-  const plies = await tab.evaluate(() => document.querySelectorAll('.main-line-ply').length);
-  const bot = await until((s) => s.moves === plies && s.graded === plies, 30000);
-  check('Bot game graded live (FP-4)', plies >= 5 && !bot.timedOut, `${plies} plies`);
+  await stampPlies();
+  let plies = await plyCount();
+  let gameOver = false;
+  while (!gameOver && plies < 200) {
+    const ready = await until((s) => s.graded === plies && s.engine?.current === plies && s.engine.ucis.length > 0, 30000, 20);
+    if (ready.timedOut) break;
+    const best = ready.engine!.ucis[0];
+    await move(best.slice(0, 2), best.slice(2, 4), 2, best[4]);
+    plies = await plyCount();
+    gameOver = await tab.evaluate(() => !!document.querySelector('.game-result'));
+  }
+  const finished = await until((s) => s.summary !== null, 60000);
+  const result = await tab.evaluate(() => document.querySelector('.game-result')?.textContent?.trim() ?? 'no result');
+  check(
+    'A whole bot game played with live grades (FP-4)',
+    gameOver && !finished.timedOut && finished.moves === plies && finished.graded === plies,
+    `${plies} plies, ${result}`,
+  );
+  const lag = await stampLag(plies);
+  // Each move restarts the review, so §9's budget for the first labels of a review applies.
+  check('Each move graded within 5 s of being played (§9)', lag.graded.max <= 5000, `median ${lag.graded.median} ms, p90 ${lag.graded.p90} ms, max ${lag.graded.max} ms`);
+  check(
+    'First lines within 1 s of each move (SUG-2)',
+    lag.lines.p90 <= 1000,
+    `median ${lag.lines.median} ms, p90 ${lag.lines.p90} ms, max ${lag.lines.max} ms`,
+  );
 
   // ENG-5: another tab, then a hidden panel.
   await go(`${GAME}185421044934`);
@@ -309,6 +406,8 @@ function state(): Promise<PanelState> {
     const $ = (id: string) => document.getElementById(id)!;
     const text = (id: string) => ($(id).hidden ? null : $(id).innerText.replace(/\s+/g, ' '));
     const moves = [...document.querySelectorAll('#moves .move')];
+    const engine = $('engine');
+    const depth = engine.querySelector('.depth')?.textContent ?? '';
     return {
       status: $('status').textContent!,
       notice: text('notice'),
@@ -317,6 +416,15 @@ function state(): Promise<PanelState> {
       detail: text('detail'),
       moves: moves.length,
       graded: moves.filter((m) => !m.classList.contains('pending')).length,
+      engine: engine.hidden
+        ? null
+        : {
+            current: engine.dataset.current === 'null' ? null : Number(engine.dataset.current),
+            depth: Number(/\d+/.exec(depth)?.[0] ?? 0),
+            searching: depth.endsWith('…'),
+            ucis: [...engine.querySelectorAll<HTMLElement>('.eng-line')].map((l) => l.dataset.uci!),
+            eval: engine.querySelector('.eval')?.textContent ?? '',
+          },
     };
   });
 }
@@ -352,10 +460,12 @@ async function setMarks(id: 'arrows' | 'badges', on: boolean): Promise<void> {
  * What PonPon drew on chess.com's board: the arrows, whether their layer sits exactly on the board, and the badge with
  * the square whose top-right corner it's on (White at the bottom).
  */
-function arrowsOnPage(): Promise<{ kinds: string[]; onBoard: boolean; badge: string | null; badgeSquare: string | null }> {
+function arrowsOnPage(): Promise<{ kinds: string[]; moves: string[]; onBoard: boolean; badge: string | null; badgeSquare: string | null }> {
   return tab.evaluate(() => {
     const host = document.querySelector('ponpon-arrows');
-    const kinds = [...(host?.shadowRoot?.querySelectorAll('polygon') ?? [])].map((p) => (p as SVGElement).dataset.kind!);
+    const polygons = [...(host?.shadowRoot?.querySelectorAll<SVGElement>('polygon') ?? [])];
+    const kinds = polygons.map((p) => p.dataset.kind!);
+    const moves = polygons.map((p) => p.dataset.move!);
     const b = document.querySelector('wc-chess-board')!.getBoundingClientRect();
     const h = host?.getBoundingClientRect();
     const near = (x: number, y: number) => Math.abs(x - y) < 2;
@@ -371,6 +481,7 @@ function arrowsOnPage(): Promise<{ kinds: string[]; onBoard: boolean; badge: str
     }
     return {
       kinds,
+      moves,
       onBoard: !!h && near(h.left, b.left) && near(h.top, b.top) && near(h.width, b.width),
       badge: g?.dataset.badge ?? null,
       badgeSquare,
@@ -403,17 +514,107 @@ async function wakeBoard(): Promise<void> {
   await sleep(1000);
 }
 
-/** Clicks a move on chess.com's board; `replies` is how many plies to wait for (2 when a bot answers). */
-async function move(from: string, to: string, replies: number): Promise<void> {
-  const count = () => tab.evaluate(() => document.querySelectorAll('.main-line-ply').length);
-  const before = await count();
+function plyCount(): Promise<number> {
+  return tab.evaluate(() => document.querySelectorAll('.main-line-ply').length);
+}
+
+/**
+ * Clicks a move on chess.com's board; `replies` is how many plies to wait for (2 when a bot answers, unless the game
+ * ends). A promotion picks `promotion` (q, r, b, n) from chess.com's picker, which opens over the target square.
+ */
+async function move(from: string, to: string, replies: number, promotion?: string): Promise<void> {
+  const before = await plyCount();
+  const ended = () => tab.evaluate(() => !!document.querySelector('.game-result'));
   // A board that is still starting up drops clicks: try again.
-  for (let attempt = 0; attempt < 3 && (await count()) === before; attempt++) {
+  for (let attempt = 0; attempt < 3 && (await plyCount()) === before; attempt++) {
     await tab.mouse.click(...(await square(from)));
     await sleep(250);
     await tab.mouse.click(...(await square(to)));
-    for (let i = 0; i < 12 && (await count()) === before; i++) await sleep(250);
+    if (promotion) {
+      await sleep(400);
+      const piece = await tab.$(`.promotion-piece.w${promotion}`);
+      await piece?.click();
+    }
+    for (let i = 0; i < 12 && (await plyCount()) === before; i++) await sleep(250);
   }
-  for (let i = 0; i < 40 && (await count()) < before + replies; i++) await sleep(250);
+  for (let i = 0; i < 40 && (await plyCount()) < before + replies && !(await ended()); i++) await sleep(250);
   await sleep(600); // the board animates the move
+}
+
+/** Records when each ply appears on chess.com's page, and when the panel grades it and shows lines for it. */
+async function stampPlies(): Promise<void> {
+  await tab.evaluate(() => {
+    const w = window as unknown as { plyAt: Record<number, number> };
+    w.plyAt = { [document.querySelectorAll('.main-line-ply').length]: Date.now() };
+    new MutationObserver(() => {
+      w.plyAt[document.querySelectorAll('.main-line-ply').length] ??= Date.now();
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  await panel.evaluate(() => {
+    const w = window as unknown as { gradedAt: Record<number, number>; linesAt: Record<number, number> };
+    w.gradedAt = {};
+    w.linesAt = {};
+    new MutationObserver(() => {
+      const graded = document.querySelectorAll('#moves .move:not(.pending)').length;
+      w.gradedAt[graded] ??= Date.now();
+      const engine = document.getElementById('engine')!;
+      if (!engine.hidden && engine.querySelector('.eng-line, .eval')) w.linesAt[Number(engine.dataset.current)] ??= Date.now();
+    }).observe(document.body, { childList: true, subtree: true, attributes: true });
+  });
+}
+
+/** How long after each ply appeared the panel graded it and showed lines for the position it led to. */
+async function stampLag(plies: number) {
+  const plyAt = await tab.evaluate(() => (window as unknown as { plyAt: Record<number, number> }).plyAt);
+  const { gradedAt, linesAt } = await panel.evaluate(() => {
+    const w = window as unknown as { gradedAt: Record<number, number>; linesAt: Record<number, number> };
+    return { gradedAt: w.gradedAt, linesAt: w.linesAt };
+  });
+  const stats = (at: Record<number, number>) => {
+    const lags = Object.keys(plyAt)
+      .map(Number)
+      .filter((n) => n > 0 && n <= plies && at[n] !== undefined)
+      .map((n) => Math.max(0, at[n] - plyAt[n]))
+      .sort((a, b) => a - b);
+    const pick = (q: number) => lags[Math.max(0, Math.ceil(q * lags.length) - 1)] ?? Infinity;
+    return { median: pick(0.5), p90: pick(0.9), max: pick(1), n: lags.length };
+  };
+  return { graded: stats(gradedAt), lines: stats(linesAt) };
+}
+
+/** Clicks chess.com's own Flip Board button. */
+async function flipBoard(): Promise<void> {
+  await tab.evaluate(() => [...document.querySelectorAll<HTMLElement>('button[aria-label="Flip Board"]')].find((b) => b.offsetParent)?.click());
+}
+
+/**
+ * BRD-2: every suggestion arrow starts on chess.com's own piece on its from-square, and its head lies inside its
+ * to-square, measured from the board's box. The "better" arrow is left out: its piece has moved on.
+ */
+function arrowGeometry() {
+  return tab.evaluate(() => {
+    const board = document.querySelector('wc-chess-board')!;
+    const b = board.getBoundingClientRect();
+    const flipped = board.classList.contains('flipped');
+    const host = document.querySelector('ponpon-arrows');
+    const h = host?.getBoundingClientRect();
+    const polygons = [...(host?.shadowRoot?.querySelectorAll<SVGElement>('polygon') ?? [])].filter((p) => p.dataset.kind !== 'better');
+    const bad: string[] = [];
+    for (const p of polygons) {
+      const move = p.dataset.move!;
+      const points = p.getAttribute('points')!.split(' ').map((xy) => xy.split(',').map(Number));
+      const unit = h!.width / 8;
+      const page = ([x, y]: number[]) => [h!.left + x * unit, h!.top + y * unit];
+      const [tx, ty] = page([(points[0][0] + points[6][0]) / 2, (points[0][1] + points[6][1]) / 2]);
+      const [hx, hy] = page(points[3]);
+      const piece = board.querySelector(`.piece.square-${move.charCodeAt(0) - 96}${move[1]}`)?.getBoundingClientRect();
+      const size = b.width / 8;
+      const [file, rank] = [move.charCodeAt(2) - 97, Number(move[3]) - 1];
+      const [col, row] = flipped ? [7 - file, rank] : [file, 7 - rank];
+      const tail = !!piece && tx > piece.left && tx < piece.right && ty > piece.top && ty < piece.bottom;
+      const head = hx > b.left + col * size && hx < b.left + (col + 1) * size && hy > b.top + row * size && hy < b.top + (row + 1) * size;
+      if (!tail || !head) bad.push(`${p.dataset.kind} ${move}${tail ? '' : ' starts off its piece'}${head ? '' : ' ends off its square'}`);
+    }
+    return { size: Math.round(b.width), flipped, arrows: polygons.length, ok: polygons.length > 0 && !bad.length, detail: bad.join(', ') };
+  });
 }

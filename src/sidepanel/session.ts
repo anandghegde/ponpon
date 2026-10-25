@@ -1,12 +1,14 @@
 // The side panel's state, kept free of the DOM and chrome.* so it can be tested: what the active tab shows, whether
-// the fair-play guard lets the engine run, and the review in progress. main.ts feeds it events and renders each View.
+// the fair-play guard lets the engine run, the review in progress, and the live suggestions for the position the
+// panel describes. main.ts feeds it events and renders each View.
 import { isHumanGameUrl, isUnlocked } from '../adapter/page-state.ts';
 import type { GameRead } from '../adapter/read.ts';
 import type { PageSnapshot } from '../adapter/snapshot.ts';
-import type { PositionEval } from '../classify/classify.ts';
+import type { Line, PositionEval } from '../classify/classify.ts';
 import { validateFen } from 'chess.js';
 import { parsePgn, replay } from '../game/replay.ts';
 import type { Game, GradedMove, Review, ReviewOptions } from '../review/review.ts';
+import type { Suggestion, SuggestOptions } from '../suggest/suggest.ts';
 
 export type Source =
   | { kind: 'page'; snapshot: PageSnapshot }
@@ -75,9 +77,30 @@ export interface View {
   held: boolean;
   /** The position on chess.com's board (plies from the start) when the page's game is shown; null on a side line. */
   ply: number | null;
+  /** The position the panel describes: `ply` for the page's game, the one picked in the panel for a pasted game. */
+  current: number | null;
+  /** SUG-1, SUG-2, SUG-4: the engine's lines for the current position, once the review has reached it. */
+  suggestion: Lines | null;
+}
+
+export interface Lines {
+  fen: string;
+  /** The review's depth, until the live search goes deeper. */
+  depth: number;
+  /** Best first, at most the lines setting (SUG-1). Empty when the game is over in this position. */
+  lines: Line[];
+  end?: PositionEval['end'];
+  /** The live search is still going deeper (SUG-2). */
+  searching: boolean;
 }
 
 export type Reviewer = (game: Game, opts: Pick<ReviewOptions, 'signal' | 'onMove' | 'onPosition' | 'focus'>) => Promise<Review>;
+/** Searches the position after `ply` moves of `game` (SUG-1). */
+export type Suggester = (game: Game, ply: number, opts: SuggestOptions) => Promise<Suggestion>;
+type Live = Suggestion & { fen: string; done: boolean };
+
+/** SUG-3: live lines reach the view at most 4 times a second. */
+export const LIVE_MS = 250;
 
 /** How long the board may disagree with the move list before PonPon gives up on the page (principle 1). */
 export const MISMATCH_GRACE_MS = 1000;
@@ -90,6 +113,7 @@ export const WATCHED_MS = 3000;
 
 export class Session {
   readonly #reviewer: Reviewer;
+  readonly #suggester: Suggester;
   readonly #onView: (view: View) => void;
   #source: Source = { kind: 'connecting' };
   #visible = true;
@@ -108,15 +132,28 @@ export class Session {
   #positions: PositionEval[] = [];
   #status: View['status'] = 'idle';
   #job: AbortController | null = null;
-  /** The engine takes one review at a time; a new one starts once the aborted one has settled. */
+  /** The position the running review evaluates first. */
+  #focus: number | undefined;
+  /** The engine takes one job at a time; a new one starts once the aborted one has settled. */
   #queue: Promise<unknown> = Promise.resolve();
+  /** SUG-1's setting. */
+  #lines = 3;
+  /** The position picked in the panel for a pasted game; null means its last position. */
+  #picked: number | null = null;
+  /** The live search's latest complete iteration, for one position. */
+  #live: Live | null = null;
+  #suggesting: AbortController | null = null;
+  #liveTimer: ReturnType<typeof setTimeout> | undefined;
+  #liveAt = 0;
 
-  constructor(reviewer: Reviewer, onView: (view: View) => void) {
+  constructor(reviewer: Reviewer, suggester: Suggester, onView: (view: View) => void) {
     this.#reviewer = reviewer;
+    this.#suggester = suggester;
     this.#onView = onView;
   }
 
   get view(): View {
+    const current = this.#current();
     return {
       notice: this.#notice(),
       canPaste: !this.#locked(),
@@ -125,7 +162,9 @@ export class Session {
       positions: this.#positions,
       status: this.#status,
       held: this.#held && this.#shown === this.#page,
-      ply: this.#shown && this.#shown === this.#page && this.#source.kind === 'page' ? (this.#source.snapshot.game?.ply ?? null) : null,
+      ply: this.#shown && this.#shown === this.#page ? current : null,
+      current,
+      suggestion: this.#suggestion(current),
     };
   }
 
@@ -203,6 +242,21 @@ export class Session {
     this.#update();
   }
 
+  /** SUG-1's setting: how many lines (1–3). The live search starts again with that many. */
+  setLines(n: number): void {
+    this.#lines = n;
+    this.#stopSuggesting();
+    this.#live = null;
+    this.#update();
+  }
+
+  /** Picks the position a pasted game shows; chess.com's board picks it for the page's game. */
+  pick(index: number): void {
+    if (!this.#shown?.pasted) return;
+    this.#picked = index;
+    this.#update();
+  }
+
   /** SRC-4: a PGN, or a FEN on its own. Returns why the paste was refused, or null when its review has started. */
   paste(text: string): string | null {
     if (this.#locked()) return 'PonPon is off on this page.';
@@ -220,6 +274,7 @@ export class Session {
       result: Result && Result !== '*' ? Result : null,
       pasted: true,
     };
+    this.#picked = null;
     this.#update();
     return null;
   }
@@ -259,8 +314,16 @@ export class Session {
     }
     this.#shown = target;
     const run = target !== null && this.#visible && !(this.#held && target === this.#page);
-    if (!run) this.#stop();
-    else if (!this.#job && this.#status !== 'done') this.#start(target);
+    const current = this.#current();
+    if (!run) {
+      this.#stop();
+      this.#stopSuggesting();
+    } else if (this.#status !== 'done') {
+      // The review comes first (ENG-2). When the board moves to a position the review hasn't reached, it goes next.
+      this.#stopSuggesting();
+      if (this.#job && current !== null && current !== this.#focus && !this.#positions[current]) this.#stop();
+      if (!this.#job) this.#start(target, current);
+    } else this.#suggest(current);
     this.#onView(this.view);
   }
 
@@ -270,11 +333,10 @@ export class Session {
     if (this.#status === 'reviewing') this.#status = 'paused';
   }
 
-  #start(target: Target): void {
+  #start(target: Target, focus: number | null): void {
     const job = (this.#job = new AbortController());
     const { signal } = job;
-    const s = this.#source;
-    const focus = target === this.#page && s.kind === 'page' ? (s.snapshot.game?.ply ?? undefined) : undefined;
+    const first = (this.#focus = focus ?? undefined);
     this.#status = 'reviewing';
     this.#queue = this.#queue
       .catch(() => {})
@@ -283,7 +345,7 @@ export class Session {
         if (signal.aborted || this.#locked()) return;
         const r = await this.#reviewer(target.game, {
           signal,
-          focus,
+          focus: first,
           // A cached position can still come through after an abort; it belongs to the old game.
           onPosition: (index, position) => {
             if (this.#job !== job) return;
@@ -301,7 +363,8 @@ export class Session {
         this.#moves = r.moves;
         this.#positions = r.positions;
         this.#status = 'done';
-        this.#onView(this.view);
+        // The live search takes over (SUG-1).
+        this.#update();
       })
       .catch((e: unknown) => {
         if (signal.aborted || this.#job !== job) return;
@@ -310,6 +373,80 @@ export class Session {
         this.#status = 'failed';
         this.#onView(this.view);
       });
+  }
+
+  /** SUG-1: once the review is done, the live search runs on the current position, unless it already has. */
+  #suggest(current: number | null): void {
+    const p = current === null ? undefined : this.#positions[current];
+    const game = this.#shown?.game;
+    if (!p || p.end || !game) return this.#stopSuggesting();
+    if (this.#live?.fen === p.fen && (this.#suggesting || this.#live.done)) return;
+    this.#stopSuggesting();
+    const live: Live = { fen: p.fen, depth: 0, lines: [], done: false };
+    this.#live = live;
+    const job = (this.#suggesting = new AbortController());
+    const { signal } = job;
+    this.#queue = this.#queue
+      .catch(() => {})
+      .then(async () => {
+        if (signal.aborted || this.#locked()) return;
+        await this.#suggester(game, current!, {
+          multipv: this.#lines,
+          signal,
+          onLines: (s) => {
+            if (this.#suggesting !== job) return;
+            Object.assign(live, s);
+            this.#emitLive();
+          },
+        });
+      })
+      .catch((e: unknown) => {
+        if (!signal.aborted) console.error(e);
+      })
+      .finally(() => {
+        if (this.#suggesting !== job) return;
+        this.#suggesting = null;
+        // A search that failed counts as done too, so it isn't started again on every update.
+        live.done = true;
+        this.#onView(this.view);
+      });
+  }
+
+  #stopSuggesting(): void {
+    this.#suggesting?.abort();
+    this.#suggesting = null;
+  }
+
+  #emitLive(): void {
+    if (this.#liveTimer !== undefined) return;
+    this.#liveTimer = setTimeout(
+      () => {
+        this.#liveTimer = undefined;
+        this.#liveAt = Date.now();
+        this.#onView(this.view);
+      },
+      Math.max(0, this.#liveAt + LIVE_MS - Date.now()),
+    );
+  }
+
+  #current(): number | null {
+    const shown = this.#shown;
+    if (shown && shown === this.#pasted) return this.#picked ?? shown.game.sans.length;
+    return shown && shown === this.#page && this.#source.kind === 'page' ? (this.#source.snapshot.game?.ply ?? null) : null;
+  }
+
+  #suggestion(current: number | null): Lines | null {
+    const p = current === null ? undefined : this.#positions[current];
+    if (!p) return null;
+    const live = this.#live?.fen === p.fen ? this.#live : null;
+    const deeper = live && live.depth > (p.depth ?? 0) ? live : null;
+    return {
+      fen: p.fen,
+      depth: deeper?.depth ?? p.depth ?? 0,
+      lines: (deeper ?? p).lines.slice(0, this.#lines),
+      end: p.end,
+      searching: !!live && this.#suggesting !== null && !live.done,
+    };
   }
 }
 

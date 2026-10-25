@@ -23,6 +23,11 @@ export interface Info {
   pv: string[];
 }
 
+/** The `position` command for a game: its start and the moves played since (UCI), so the engine sees repetitions. */
+export function positionCommand(startFen: string, moves: string[]): string {
+  return `position fen ${startFen}${moves.length ? ` moves ${moves.join(' ')}` : ''}`;
+}
+
 /** Parses an `info` line. Returns null for lines without a score (`info string`, `currmove`, …). */
 export function parseInfo(line: string): Info | null {
   const t = line.split(' ');
