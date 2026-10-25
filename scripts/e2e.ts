@@ -66,16 +66,22 @@ try {
     !synced.timedOut && drawn.kinds.join() === 'better,best,second' && drawn.onBoard,
     drawn.kinds.join(', '),
   );
+  check('…and a ?? badge on the corner of f4, where the blunder went (BRD-3)', drawn.badge === '??' && drawn.badgeSquare === 'f4', `${drawn.badge} on ${drawn.badgeSquare}`);
   await tab.screenshot({ path: join(shots, 'arrows.png') });
   await tab.focus('body');
   await tab.keyboard.press('ArrowLeft');
   const stepped = await until((s) => !!s.detail?.startsWith('6…'), 5000, 50);
   await sleep(500);
   check('Stepping back on chess.com moves the card and the arrows (SYNC-1)', !stepped.timedOut && (await arrowsOnPage()).kinds.length > 0, stepped.detail ?? '');
-  await setArrows(false);
+  await setMarks('arrows', false);
   await sleep(500);
-  check('Arrows turn off (BRD-4)', (await arrowsOnPage()).kinds.length === 0, '');
-  await setArrows(true);
+  const noArrows = await arrowsOnPage();
+  check('Arrows turn off, the badge stays (BRD-4)', noArrows.kinds.length === 0 && noArrows.badge === '?', `badge ${noArrows.badge} for 6… g6`);
+  await setMarks('badges', false);
+  await sleep(500);
+  check('Badges turn off (BRD-4)', (await arrowsOnPage()).badge === null, '');
+  await setMarks('arrows', true);
+  await setMarks('badges', true);
 
   panel = await openPanel();
   const again = await until((s) => s.summary !== null, 5000);
@@ -337,20 +343,38 @@ async function setPreset(preset: string): Promise<void> {
   await panel.select('#preset', preset);
 }
 
-async function setArrows(on: boolean): Promise<void> {
+async function setMarks(id: 'arrows' | 'badges', on: boolean): Promise<void> {
   await panel.$eval('#settings', (e) => ((e as HTMLDetailsElement).open = true));
-  if ((await panel.$eval('#arrows', (e) => (e as HTMLInputElement).checked)) !== on) await panel.click('#arrows');
+  if ((await panel.$eval(`#${id}`, (e) => (e as HTMLInputElement).checked)) !== on) await panel.click(`#${id}`);
 }
 
-/** The arrows PonPon drew on chess.com's board, and whether their layer sits exactly on the board. */
-function arrowsOnPage(): Promise<{ kinds: string[]; onBoard: boolean }> {
+/**
+ * What PonPon drew on chess.com's board: the arrows, whether their layer sits exactly on the board, and the badge with
+ * the square whose top-right corner it's on (White at the bottom).
+ */
+function arrowsOnPage(): Promise<{ kinds: string[]; onBoard: boolean; badge: string | null; badgeSquare: string | null }> {
   return tab.evaluate(() => {
     const host = document.querySelector('ponpon-arrows');
     const kinds = [...(host?.shadowRoot?.querySelectorAll('polygon') ?? [])].map((p) => (p as SVGElement).dataset.kind!);
     const b = document.querySelector('wc-chess-board')!.getBoundingClientRect();
     const h = host?.getBoundingClientRect();
     const near = (x: number, y: number) => Math.abs(x - y) < 2;
-    return { kinds, onBoard: !!h && near(h.left, b.left) && near(h.top, b.top) && near(h.width, b.width) };
+    const g = host?.shadowRoot?.querySelector<SVGGElement>('g[data-badge]');
+    let badgeSquare: string | null = null;
+    if (g) {
+      const r = g.getBoundingClientRect();
+      const size = b.width / 8;
+      // The badge's centre sits 0.38 of a square right of and above the square's centre.
+      const file = Math.floor((r.left + r.width / 2 - b.left) / size - 0.38);
+      const row = Math.floor((r.top + r.height / 2 - b.top) / size + 0.38);
+      badgeSquare = `${'abcdefgh'[file]}${8 - row}`;
+    }
+    return {
+      kinds,
+      onBoard: !!h && near(h.left, b.left) && near(h.top, b.top) && near(h.width, b.width),
+      badge: g?.dataset.badge ?? null,
+      badgeSquare,
+    };
   });
 }
 

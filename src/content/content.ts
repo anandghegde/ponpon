@@ -1,15 +1,15 @@
 // The content script (SRC-1, SRC-5). While a side panel is connected it re-reads the page after every DOM change
 // and sends the snapshot whenever it differs. It reads chess.com's DOM, never clones or changes it
-// (docs/chesscom-dom.md); its only additions are the arrow layer (BRD-1) and clicks on chess.com's own move list
-// when the panel selects a move (SYNC-2).
+// (docs/chesscom-dom.md); its only additions are the layer of arrows and badges (BRD-1, BRD-3) and clicks on
+// chess.com's own move list when the panel selects a move (SYNC-2).
 import { isUnlocked, type PageState } from '../adapter/page-state.ts';
 import * as S from '../adapter/selectors.ts';
 import { snapshot } from '../adapter/snapshot.ts';
-import { draw, type Arrow } from './overlay.ts';
+import { draw, type Marks } from './overlay.ts';
 
-/** What the side panel sends: the arrows for the board, or a move to show (main line, 0-based). */
+/** What the side panel sends: the marks for the board, or a move to show (main line, 0-based). */
 export interface PanelMessage {
-  arrows?: Arrow[];
+  marks?: Marks;
   select?: number;
 }
 
@@ -19,11 +19,11 @@ const READ_MS = 100;
 const ports = new Set<chrome.runtime.Port>();
 let sent = '';
 let timer: ReturnType<typeof setTimeout> | null = null;
-const NONE: Arrow[] = [];
+const NONE: Marks = { arrows: [], badge: null };
 let wanted = NONE;
 let drawn = NONE;
 
-/** The second half of the fair-play decision (PRD §8): the page itself must be unlocked for arrows to show. */
+/** The second half of the fair-play decision (PRD §8): the page itself must be unlocked for marks to show. */
 function paint(state: PageState): void {
   const next = isUnlocked(state) ? wanted : NONE;
   if (next === drawn) return;
@@ -51,8 +51,8 @@ chrome.runtime.onConnect.addListener((port) => {
   sent = JSON.stringify(now);
   port.postMessage(now);
   port.onMessage.addListener((message: PanelMessage) => {
-    if (message.arrows) {
-      wanted = message.arrows.length ? message.arrows : NONE;
+    if (message.marks) {
+      wanted = message.marks.arrows.length || message.marks.badge ? message.marks : NONE;
       paint(snapshot(location.href, document).state);
     }
     if (message.select !== undefined) {

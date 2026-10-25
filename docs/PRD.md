@@ -256,10 +256,10 @@ chess.com tab                                 port                Side panel (ex
 | M | Scope | Verify |
 |---|---|---|
 | **M0** Spike | (a) Adapter: read the move list, ply, orientation and state on the analysis board, a finished Live game, a finished Daily game, a bot game, and an in-progress Live game (state only, engine off). Save HTML fixtures for each. (b) Stockfish 19 lite single in a side-panel worker: measure nodes/s and per-position time at depths 12/16/20 | The adapter's SAN list matches the downloaded PGN for 5 of my games; the page-state classification is right on all 5 page types; timings are written to `docs/perf.md` and ENG-4's depths are fixed |
-| **M1** Review MVP | SRC-1–5, FP-1–7, ENG-1–5, CLS-1, CLS-2, CLS-4, CLS-5, REV-1–5, DATA-1–4, paste PGN; brought forward from M2: BRD-1 from the review, BRD-2, BRD-4's arrows toggle, SYNC-1, SYNC-2 | 20 of my games reviewed; label agreement with chess.com's Game Review measured (§11); golden tests pass; the FP matrix passes: in-progress = nothing shown and engine idle; result appears = auto-review starts; a watched game is graded live; a game of mine in another tab locks everything |
-| **M2** Suggestions | SUG-1–4, BRD-1's live suggestion arrows, BRD-4's shortcut and badges toggle | Arrows land on the right squares in both orientations at 3 board sizes and after a resize; the panel follows arrow-key navigation; a full bot game played with live grades |
+| **M1** Review MVP | SRC-1–5, FP-1–7, ENG-1–5, CLS-1, CLS-2, CLS-4, CLS-5, REV-1–5, DATA-1–4, paste PGN; brought forward: BRD-1 from the review, BRD-2, BRD-3, BRD-4's arrows and badges toggles, SYNC-1, SYNC-2 | 20 of my games reviewed; label agreement with chess.com's Game Review measured (§11); golden tests pass; the FP matrix passes: in-progress = nothing shown and engine idle; result appears = auto-review starts; a watched game is graded live; a game of mine in another tab locks everything |
+| **M2** Suggestions | SUG-1–4, BRD-1's live suggestion arrows, BRD-4's shortcut | Arrows land on the right squares in both orientations at 3 board sizes and after a resize; the panel follows arrow-key navigation; a full bot game played with live grades |
 | **M3** Polish and v1.0 | SET-1–5, icons and a gold-pawn logo, About/GPL link, a README with the unpacked-install steps | A fresh Chrome profile loads the unpacked extension (chrome://extensions → Load unpacked) and reviews a game in ≤ 3 clicks; FP matrix re-run |
-| **M4** v1.1 | CLS-3, REV-6–8, BRD-3, SYNC-2 | Accuracy within ±3 of Lichess's on 10 games exported there |
+| **M4** v1.1 | CLS-3, REV-6–8 | Accuracy within ±3 of Lichess's on 10 games exported there |
 
 ## 11. Success metrics
 
@@ -298,6 +298,7 @@ chess.com tab                                 port                Side panel (ex
 
 **Decided 2026-10-25** (asked)
 - **Arrows on the board in M1** (BRD-1, BRD-2, SYNC-1, SYNC-2), with a green arrow for the move that was better than the one just played.
+- **Badges on the board in M1** (BRD-3): !!, !, ?!, ?, ?? on the square the move went to, in the label colours.
 - **Watching a game is reviewed live** (FP-7), with FP-5 brought into M1 as its guard.
 
 **Decided 2026-10-25** (while finishing M1; to confirm)

@@ -17,12 +17,12 @@ Everything in M1's scope is built and checked on real chess.com pages, except th
 | Settings (ENG-4 preset, FP-3 auto-review; DATA-1, DATA-4) | **Done** | In the panel's Settings; `chrome.storage.local`; `storage` permission |
 | IndexedDB cache (DATA-1, DATA-2) | **Done** | `test/store.test.ts` (fake-indexeddb) and live: a reviewed game reopens in about 200 ms |
 | Watching a game live (FP-7) and the other-tab lock (FP-5) | **Done** (asked, 2026-10-25) | Adapter tests (I'm a player, logged out, a name unread, `/play/online`), session tests, and `npm run e2e` with a planted profile link |
-| Arrows on the board, panel ↔ board sync (BRD-1, BRD-2, BRD-4 toggle, SYNC-1, SYNC-2; from M2, asked) | **Done** | `test/arrows.test.ts`; `npm run e2e`: arrows over the right squares, ← on chess.com moves the card and arrows, a panel click moves chess.com's board, none on a locked page, cleared by the page itself when it turns into my game |
-| FP matrix (FP-6) | **Done** | `test/session.test.ts`, and `npm run e2e`: 36 live checks, all passing on 2026-10-25 |
+| Arrows and badges on the board, panel ↔ board sync (BRD-1–3, BRD-4 toggles, SYNC-1, SYNC-2; asked) | **Done** | `test/arrows.test.ts`; `npm run e2e`: arrows over the right squares, ← on chess.com moves the card and arrows, a panel click moves chess.com's board, none on a locked page, cleared by the page itself when it turns into my game |
+| FP matrix (FP-6) | **Done** | `test/session.test.ts`, and `npm run e2e`: 38 live checks, all passing on 2026-10-25 |
 | 20 of the user's games reviewed | **Done** | `agreement/`: the latest 20 games, PGNs and Normal-depth evaluations |
 | Label agreement with chess.com (§11) | **Waiting on chess.com labels** | `npm run agreement` compares as soon as `agreement/<id>.chesscom.txt` files exist (format in `agreement/README.md`). The free account allows one Game Review a day |
 
-`npx vitest run` → 158/158, `npm run typecheck` clean, `npm run build` → `dist/`, `npm run e2e` → 36/36.
+`npx vitest run` → 165/165, `npm run typecheck` clean, `npm run build` → `dist/`, `npm run e2e` → 38/38. Branch `m1-review` on origin.
 
 ## What the live run covers (`npm run e2e`, about 4 minutes)
 
@@ -52,7 +52,7 @@ Made while building, not asked:
 10. **Dev dependencies:** `fake-indexeddb` 6.2.5 (store tests), `puppeteer-core` 25.13.0 (e2e). Both pinned to releases at least two weeks old.
 11. **Watching a game is reviewed live (FP-7, asked).** `spectating` needs my name (sidebar profile link) and both players' names, none equal; anything unread is `in-progress-vs-human`. `/play/online` is never `spectating`.
 12. **FP-5 lives in the panel, not the service worker:** the panel keeps a port to every chess.com tab in every window. It locks on another tab that is `in-progress-vs-human`, a game URL that hasn't answered yet (briefly, while it loads), or a game URL whose content script never answers ("Reload or close it"). Discarded tabs don't count. Incognito tabs are invisible to PonPon unless it's allowed there.
-13. **Arrows (asked).** Gold = best move in the position on chess.com's board, faint gold = second best, green = what was better than the move that led there (only after Good or worse). They come from the review (depth 16, MultiPV 2); the review evaluates the board's position and the one before it first, and the panel shows positions as they arrive. The layer is `<ponpon-arrows>` (open shadow root) fixed over the board, re-placed every animation frame while shown. The panel's selected move follows chess.com's board (SYNC-1); clicking a move in the panel clicks chess.com's own move (`.node-highlight-content`) (SYNC-2). Settings has an "Arrows on the board" switch.
+13. **Arrows (asked).** Gold = best move in the position on chess.com's board, faint gold = second best, green = what was better than the move that led there (only after Good or worse). They come from the review (depth 16, MultiPV 2); the review evaluates the board's position and the one before it first, and the panel shows positions as they arrive. The layer is `<ponpon-arrows>` (open shadow root) fixed over the board, re-placed every animation frame while shown. The panel's selected move follows chess.com's board (SYNC-1); clicking a move in the panel clicks chess.com's own move (`.node-highlight-content`) (SYNC-2). A badge (!!, !, ?!, ?, ??, label colour) sits on the top-right corner of the square the shown move went to (BRD-3); none for book/best/excellent/good. Settings has separate "Arrows" and "Badges" switches. Label symbols and colours live in `classify.ts` (`LABEL_SYMBOLS`, `LABEL_COLORS`); the panel's CSS repeats the colours.
 
 ## What's in the repo
 

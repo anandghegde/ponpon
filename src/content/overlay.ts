@@ -1,6 +1,6 @@
-// Arrows on chess.com's board (BRD-1, BRD-2): an SVG in a shadow root on a fixed, click-through layer that tracks the
-// board's box every frame while arrows are shown, so it follows resizes, scrolling, layout changes and flips.
-// Nothing is added inside chess.com's own elements.
+// Arrows and a label badge on chess.com's board (BRD-1, BRD-2, BRD-3): an SVG in a shadow root on a fixed,
+// click-through layer that tracks the board's box every frame while anything is shown, so it follows resizes,
+// scrolling, layout changes and flips. Nothing is added inside chess.com's own elements.
 import * as S from '../adapter/selectors.ts';
 
 /** `best`: the best move in the position on the board; `second`: the next best; `better`: what should have been played instead of the move that led here. */
@@ -8,6 +8,18 @@ export interface Arrow {
   from: string;
   to: string;
   kind: 'best' | 'second' | 'better';
+}
+
+/** A label's symbol on the destination square of the move shown on the board, as in chess.com's review. */
+export interface Badge {
+  square: string;
+  text: string;
+  color: string;
+}
+
+export interface Marks {
+  arrows: Arrow[];
+  badge: Badge | null;
 }
 
 const LOOK: Record<Arrow['kind'], { color: string; width: number; opacity: number }> = {
@@ -19,13 +31,13 @@ const SVG = 'http://www.w3.org/2000/svg';
 
 let host: HTMLElement | null = null;
 let svg: SVGSVGElement | null = null;
-let shown: Arrow[] = [];
+let shown: Marks = { arrows: [], badge: null };
 let box = '';
 let frame = 0;
 
-export function draw(arrows: Arrow[]): void {
-  shown = arrows;
-  if (!arrows.length) {
+export function draw(marks: Marks): void {
+  shown = marks;
+  if (!marks.arrows.length && !marks.badge) {
     cancelAnimationFrame(frame);
     host?.remove();
     host = svg = null;
@@ -56,7 +68,7 @@ function follow(): void {
     if (now !== box) {
       box = now;
       Object.assign(host.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-      svg.replaceChildren(...shown.map((a) => arrow(a, flipped)));
+      svg.replaceChildren(...shown.arrows.map((a) => arrow(a, flipped)), ...(shown.badge ? [badge(shown.badge, flipped)] : []));
     }
   }
   frame = requestAnimationFrame(follow);
@@ -70,6 +82,37 @@ function arrow(a: Arrow, flipped: boolean): SVGElement {
   p.setAttribute('opacity', String(opacity));
   p.dataset.kind = a.kind;
   return p;
+}
+
+function badge(b: Badge, flipped: boolean): SVGElement {
+  const [x, y] = badgeCentre(b.square, flipped);
+  const g = document.createElementNS(SVG, 'g');
+  g.dataset.badge = b.text;
+  const circle = document.createElementNS(SVG, 'circle');
+  for (const [k, v] of Object.entries({ cx: x, cy: y, r: 0.2, fill: b.color, stroke: '#fff', 'stroke-width': 0.03 })) {
+    circle.setAttribute(k, String(v));
+  }
+  const text = document.createElementNS(SVG, 'text');
+  const attrs = {
+    x,
+    y,
+    fill: '#fff',
+    'font-size': b.text.length > 1 ? 0.2 : 0.26,
+    'font-weight': 700,
+    'font-family': 'system-ui, sans-serif',
+    'text-anchor': 'middle',
+    'dominant-baseline': 'central',
+  };
+  for (const [k, v] of Object.entries(attrs)) text.setAttribute(k, String(v));
+  text.textContent = b.text;
+  g.append(circle, text);
+  return g;
+}
+
+/** The badge sits on the square's top-right corner, overlapping its edge, as chess.com places its own. */
+export function badgeCentre(square: string, flipped: boolean): [number, number] {
+  const [x, y] = squareCentre(square, flipped);
+  return [x + 0.38, y - 0.38];
 }
 
 /** A square's centre in board units (0–8, top left is 0,0) as the board shows it. */

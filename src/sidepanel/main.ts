@@ -5,7 +5,7 @@ import type { PositionEval } from '../classify/classify.ts';
 import { Uci } from '../engine/uci.ts';
 import { PRESETS, review, type Preset } from '../review/review.ts';
 import type { PanelMessage } from '../content/content.ts';
-import { boardArrows } from './arrows.ts';
+import { boardMarks } from './arrows.ts';
 import { elsewhere, Session, type Source, type View } from './session.ts';
 import { ReviewStore } from './store.ts';
 import { mount } from './view.ts';
@@ -20,14 +20,15 @@ worker.onmessage = (e: MessageEvent<string>) => uci.receive(e.data);
 const ready = uci.init({ Hash: 64, Threads: 1 });
 /** Evaluations by FEN for each preset, kept while the panel is open. */
 const caches: Record<Preset, Map<string, PositionEval>> = { fast: new Map(), normal: new Map(), deep: new Map() };
-/** DATA-1: ENG-4's preset, FP-3's auto-review and BRD-4's arrows; SET-2 brings the rest. */
+/** DATA-1: ENG-4's preset, FP-3's auto-review and BRD-4's arrows and badges; SET-2 brings the rest. */
 interface Settings {
   preset: Preset;
   autoReview: boolean;
   arrows: boolean;
+  badges: boolean;
 }
 const stored = (await chrome.storage.local.get('settings')).settings as Partial<Settings> | undefined;
-const settings: Settings = { preset: 'normal', autoReview: true, arrows: true, ...stored };
+const settings: Settings = { preset: 'normal', autoReview: true, arrows: true, badges: true, ...stored };
 /** A store that fails only costs the instant reopen. */
 const store = ReviewStore.open(ENGINE).catch((e: unknown) => (console.error(e), null));
 
@@ -47,7 +48,7 @@ const session = new Session(
   },
   (view) => {
     render(view);
-    sendArrows(view);
+    sendMarks(view);
   },
 );
 render = mount({
@@ -61,9 +62,11 @@ session.setAutoReview(settings.autoReview);
 const preset = document.getElementById('preset') as HTMLSelectElement;
 const autoReview = document.getElementById('auto-review') as HTMLInputElement;
 const arrows = document.getElementById('arrows') as HTMLInputElement;
+const badges = document.getElementById('badges') as HTMLInputElement;
 preset.value = settings.preset;
 autoReview.checked = settings.autoReview;
 arrows.checked = settings.arrows;
+badges.checked = settings.badges;
 const save = () => chrome.storage.local.set({ settings }).catch((e: unknown) => console.error(e));
 preset.addEventListener('change', () => {
   settings.preset = preset.value as Preset;
@@ -75,11 +78,13 @@ autoReview.addEventListener('change', () => {
   void save();
   session.setAutoReview(autoReview.checked);
 });
-arrows.addEventListener('change', () => {
-  settings.arrows = arrows.checked;
-  void save();
-  sendArrows(session.view);
-});
+for (const box of [arrows, badges]) {
+  box.addEventListener('change', () => {
+    settings[box.id as 'arrows' | 'badges'] = box.checked;
+    void save();
+    sendMarks(session.view);
+  });
+}
 
 const { id: windowId } = await chrome.windows.getCurrent();
 
@@ -161,22 +166,23 @@ function post(port: chrome.runtime.Port | null, message: PanelMessage): void {
   } catch {}
 }
 
-let arrowsPort: chrome.runtime.Port | null = null;
-let arrowsSent = '[]';
+const NO_MARKS = { arrows: [], badge: null };
+let marksPort: chrome.runtime.Port | null = null;
+let marksSent = JSON.stringify(NO_MARKS);
 
-/** Sends the active tab its arrows when they change, and clears them from a tab the panel leaves. */
-function sendArrows(view: View): void {
+/** Sends the active tab its arrows and badge when they change, and clears them from a tab the panel leaves. */
+function sendMarks(view: View): void {
   const port = activePort();
-  if (port !== arrowsPort) {
-    post(arrowsPort, { arrows: [] });
-    arrowsPort = port;
-    arrowsSent = '[]';
+  if (port !== marksPort) {
+    post(marksPort, { marks: NO_MARKS });
+    marksPort = port;
+    marksSent = JSON.stringify(NO_MARKS);
   }
-  const next = settings.arrows ? boardArrows(view) : [];
-  const json = JSON.stringify(next);
-  if (!port || json === arrowsSent) return;
-  arrowsSent = json;
-  post(port, { arrows: next });
+  const marks = boardMarks(view, settings);
+  const json = JSON.stringify(marks);
+  if (!port || json === marksSent) return;
+  marksSent = json;
+  post(port, { marks });
 }
 
 async function activate(tabId: number): Promise<void> {

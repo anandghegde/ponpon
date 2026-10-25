@@ -1,7 +1,7 @@
 // Renders a Session view: the notice, the summary card (REV-4), the move list with label badges (REV-2), the
 // selected-move card (REV-3) and the paste box (SRC-4). Plain DOM, rebuilt on every view; text only, never HTML,
 // since player names come from the page or a pasted PGN.
-import { LABEL_NAMES, type Label, type PositionEval } from '../classify/classify.ts';
+import { LABEL_NAMES, LABEL_SYMBOLS, type Label, type PositionEval } from '../classify/classify.ts';
 import { formatScore } from '../engine/uci.ts';
 import { sanLine } from '../game/replay.ts';
 import { summarise, type GradedMove } from '../review/review.ts';
@@ -18,8 +18,6 @@ const NOTICES: Record<Notice, string> = {
   'other-site': 'Open a game on chess.com, or paste a PGN.',
 };
 
-/** Annotation symbols shown after the move. */
-const SYMBOLS: Partial<Record<Label, string>> = { brilliant: '!!', great: '!', inaccuracy: '?!', mistake: '?', blunder: '??' };
 
 export interface Actions {
   paste(text: string): string | null;
@@ -144,7 +142,7 @@ function moveButton(san: string, ply: number, m: GradedMove | undefined, selecte
   button.dataset.ply = String(ply);
   if (m) button.title = LABEL_NAMES[m.label];
   button.append(el('span', 'dot'), san);
-  const symbol = m && SYMBOLS[m.label];
+  const symbol = m && LABEL_SYMBOLS[m.label];
   if (symbol) button.append(el('span', 'sym', symbol));
   return button;
 }

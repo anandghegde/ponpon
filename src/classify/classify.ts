@@ -18,6 +18,28 @@ export const LABEL_NAMES: Record<Label, string> = {
   blunder: 'Blunder',
 };
 
+/** Annotation symbols, shown after the move in the panel and in the board's badge (BRD-3). */
+export const LABEL_SYMBOLS: Partial<Record<Label, string>> = {
+  brilliant: '!!',
+  great: '!',
+  inaccuracy: '?!',
+  mistake: '?',
+  blunder: '??',
+};
+
+/** PRD §6.4's colours; the side panel's stylesheet repeats them. */
+export const LABEL_COLORS: Record<Label, string> = {
+  book: '#a0703c',
+  brilliant: '#d4a017',
+  great: '#179c9c',
+  best: '#3f9b3f',
+  excellent: '#7ac35f',
+  good: '#8aa58a',
+  inaccuracy: '#e1b81f',
+  mistake: '#ee8a2a',
+  blunder: '#dc3b3b',
+};
+
 export interface Line {
   /** From White's point of view (ENG-3). */
   score: Score;
