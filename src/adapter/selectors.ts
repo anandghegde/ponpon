@@ -29,6 +29,3 @@ export const GAME_RESULT = '.game-result';
 export const PLAYER_TOP = '#board-layout-player-top';
 export const PLAYER_BOTTOM = '#board-layout-player-bottom';
 export const PLAYER_USERNAME = '.cc-user-username-component';
-
-/** The sidebar's link to my own profile, `https://www.chess.com/member/<me>`. Absent when logged out. */
-export const MY_PROFILE_LINK = 'a[data-user-activity-key="profile"][href*="/member/"]';

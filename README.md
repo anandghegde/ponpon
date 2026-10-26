@@ -30,9 +30,9 @@ After pulling changes, run `npm run build` again and press the reload button on 
 - **Paste** a PGN or FEN from anywhere and get the same review.
 - **Labels in English, Kanglish or ಕನ್ನಡ** (Settings). Hover a label to see its other names.
 
-## The fair-play lock
+## Live games
 
-While you're playing a person, Live or Daily, PonPon shows nothing and its engine stays off. chess.com's Fair Play Policy bans engines during play and closes accounts for it. PonPon unlocks when the result appears. Bot games, the analysis board and games you're only watching aren't locked. If a game of yours is in progress in another tab, PonPon stays off everywhere until it ends.
+PonPon suggests moves during games in progress too — your own as well as ones you're only watching, with the review filling in as the game goes. Know the risk: chess.com's Fair Play Policy bans engine help during play and closes accounts for it, even in unrated games; using PonPon in your own live games is your choice to make. The engine stays off only on pages PonPon can't read: variants, puzzles and lessons, or a page it doesn't recognise.
 
 ## Settings
 

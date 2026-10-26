@@ -23,7 +23,7 @@ const NONE: Marks = { arrows: [], badge: null };
 let wanted = NONE;
 let drawn = NONE;
 
-/** The second half of the fair-play decision (PRD §8): the page itself must be unlocked for marks to show. */
+/** The page itself must be unlocked for marks to show (PRD §8): nothing on a page PonPon doesn't recognise. */
 function paint(state: PageState): void {
   const next = isUnlocked(state) ? wanted : NONE;
   if (next === drawn) return;

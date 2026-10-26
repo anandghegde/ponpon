@@ -2,6 +2,16 @@
 
 *2026-10-25. Read `docs/PRD.md` §6.4, §6.5, §6.9, §10 and §13 (the newest "to confirm" block), then `docs/chesscom-dom.md`.*
 
+## 2026-10-25 (later): live suggestions in your own games
+
+The user asked for live suggestions in their own in-progress games too (until then only finished games, bot games and watched games got them), knowing chess.com's Fair Play Policy bans engine help during play. Typecheck and build pass; this change isn't committed.
+
+- `page-state.ts`: `spectating` and `in-progress-vs-human` collapsed into `live-game`, which is unlocked — a game against a person in progress, mine or anyone's. The neither-player-is-me check (`watching()`), `MY_PROFILE_LINK` and `isHumanGameUrl` are gone (`test/adapter.test.ts` still refers to the selector; tests aren't maintained and sit outside tsconfig).
+- `session.ts` / `main.ts`: FP-5's every-tab lock (`Elsewhere`, `elsewhere()`, `setElsewhere`) and the "Game in progress" notice are removed; FP-3's end-of-game hold now keys on `live-game` → finished. Own games behave exactly like spectated ones: reviewed live, suggestions and arrows on the position the board shows.
+- The first-run intro and the README state the fair-play risk instead of describing the old lock; PRD §6.2 is now "Page lock" (FP-5 marked removed) and §13 records the decision.
+
+## Where things stand (M3/M4, earlier on 2026-10-25)
+
 ## Where things stand
 
 Nothing since M1 is committed (branch `m1-review`; the user chose not to commit yet). Everything below builds (`npm run build` → `dist/`) and `npm run typecheck` is clean. Per the user, there are no tests any more; the checks were the build, the typecheck, a render of the real `view.ts` in headless Chrome from a real review, and `npm run review:node`.
@@ -71,7 +81,7 @@ src/classify/             thresholds.ts (every number), classify.ts (labels in 3
 src/engine/uci.ts         UCI client, parseInfo, positionCommand (start + moves)
 src/review/review.ts      PRESETS, review(), summarise() with Lichess's game accuracy
 src/suggest/suggest.ts    suggest(): go infinite, MultiPV, whole iterations, depth 22 or 15 s
-src/sidepanel/session.ts  panel state: guard, paste, auto-review hold, review then live search, 4 updates a second
+src/sidepanel/session.ts  panel state: page lock, paste, auto-review hold, review then live search, 4 updates a second
 src/sidepanel/arrows.ts   what the board shows: best moves from the panel's lines, "better", badge
 src/sidepanel/store.ts    ReviewStore: IndexedDB, 500 games, LRU, size(), clear()
 src/sidepanel/view.ts     rendering: label sets, intro legend, summary with graph and key moments, moves, engine card
@@ -107,3 +117,4 @@ test/                     kept but not run or maintained
 - The user wants work finished and checked before being asked to try it (2026-10-25).
 - **No tests** (2026-10-25): don't write, run or fix vitest, `npm run e2e` or the golden tests. The files stay; `test/` is out of `tsconfig.json`, so `npm run typecheck` covers `src` and `scripts` only. Check work with `npm run typecheck` and `npm run build`.
 - **The user doesn't care about chess.com's Game Review**: the label-agreement check is gone (`scripts/agreement.ts`, `agreement/`, §11's metric).
+- **The user wants live suggestions in their own live games** (2026-10-25): the fair-play guard against own games is gone by their choice, risk (account closure) stated in the intro and README. Spectating fixtures stay the only in-progress captures; capturing their own live game still needs asking.

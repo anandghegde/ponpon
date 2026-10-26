@@ -7,7 +7,7 @@ import { PRESETS, review, type Preset } from '../review/review.ts';
 import { suggest } from '../suggest/suggest.ts';
 import type { PanelMessage } from '../content/content.ts';
 import { boardMarks } from './arrows.ts';
-import { elsewhere, Session, type Source, type View } from './session.ts';
+import { Session, type Source, type View } from './session.ts';
 import { ReviewStore } from './store.ts';
 import { mount, type LabelSet } from './view.ts';
 
@@ -158,7 +158,7 @@ document.getElementById('version')!.textContent = chrome.runtime.getManifest().v
 
 const { id: windowId } = await chrome.windows.getCurrent();
 
-/** Every chess.com tab, in every window: the active one is reviewed, the others can lock the panel (FP-5). */
+/** Every chess.com tab, in every window: its snapshot keeps the panel current when the active tab changes, and its port carries the board's marks. */
 interface Watched {
   tab: chrome.tabs.Tab;
   port: chrome.runtime.Port | null;
@@ -207,10 +207,6 @@ function drop(tabId: number): void {
 }
 
 function update(): void {
-  const others = [...watched].filter(([id]) => id !== activeId);
-  session.setElsewhere(
-    elsewhere(others.map(([, w]) => ({ url: w.tab.url!, snapshot: w.snapshot, unread: w.unread, discarded: !!w.tab.discarded }))),
-  );
   const w = activeId === undefined ? undefined : watched.get(activeId);
   const source: Source =
     !w ? { kind: 'other-site' }

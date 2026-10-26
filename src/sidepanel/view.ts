@@ -20,10 +20,7 @@ import { summarise, type GradedMove } from '../review/review.ts';
 import type { Lines, Notice, View } from './session.ts';
 
 const NOTICES: Record<Notice, string> = {
-  'in-progress': 'Game in progress. PonPon reviews it as soon as it ends.',
-  'elsewhere-game': 'Another chess.com tab has a game in progress that may be yours. PonPon stays off until it ends.',
-  'elsewhere-unread': "PonPon can't read one of your chess.com game tabs, so it can't tell whether a game is in progress there. Reload or close it.",
-  unknown: 'PonPon stays off on this page. Open a finished game, the analysis board or a bot game.',
+  unknown: "PonPon stays off on this page. Open a game, finished or in progress, the analysis board or a bot game.",
   unsupported: "PonPon doesn't work on this page (variants, puzzles and lessons).",
   'no-reader': "PonPon can't read this tab yet. Reload the page.",
   unreadable: "PonPon can't read this game. Paste the PGN.",

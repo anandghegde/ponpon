@@ -77,25 +77,25 @@ Priority: **P0** = v1.0, **P1** = v1.1, **P2** = later.
 | ID | Requirement | Pri |
 |---|---|---|
 | SRC-1 | A content script on `https://www.chess.com/*` reads the move list (SAN), the starting position, the selected ply, the board orientation, the players and the result from the DOM. Every selector lives in one file (`src/adapter/selectors.ts`), found during the M0 spike. | P0 |
-| SRC-2 | Classify each page as one of: `analysis`, `finished-game`, `bot-game`, `spectating` (FP-7), `in-progress-vs-human` (a game I'm playing, or might be), `unsupported` (variants, puzzles, lessons), `unknown`. Uses URL patterns plus DOM signals (a visible result, the game-over panel, running clocks). The URL patterns are confirmed in M0. | P0 |
+| SRC-2 | Classify each page as one of: `analysis`, `finished-game`, `bot-game`, `live-game` (FP-7: a game against a person in progress, mine or someone else's), `unsupported` (variants, puzzles, lessons), `unknown`. Uses URL patterns plus DOM signals (a visible result, the game-over panel, running clocks). The URL patterns are confirmed in M0. | P0 |
 | SRC-3 | Rebuild every position with `chess.js` from the SAN list. If any move fails to parse, stop and show "PonPon can't read this game. Paste the PGN" (principle 1). | P0 |
 | SRC-4 | **Paste PGN or FEN** in the side panel. This works on any page and keeps PonPon useful if chess.com changes its DOM. | P0 |
 | SRC-5 | Watch the move list with a `MutationObserver` and push changes to the side panel within 200 ms (new moves on the analysis board, a bot game, or the result appearing). | P0 |
 | SRC-6 | Fallback for finished games: fetch the PGN from the chess.com PubAPI (`api.chess.com/pub/player/{user}/games/{YYYY}/{MM}`) and match it by game id. Its endpoints refresh at most every 12 hours, so this is for older games only, never the one that just ended. | P2 |
 
-### 6.2 Fair-play guard (FP)
+### 6.2 Page lock (FP)
 
-Why: chess.com's Fair Play Policy says *"Do not use chess engines, software of any kind, bots, plugins, browser extensions, or any tools that analyze positions during play."* For Daily games it also forbids engine opinions on a game in progress. The policy does not apply to games against chess.com's bots. Chess.com closes accounts for violations, even in unrated games. The guard makes it impossible to break this by accident.
+Why: until 2026-10-25 this section was a fair-play guard: chess.com's Fair Play Policy says *"Do not use chess engines, software of any kind, bots, plugins, browser extensions, or any tools that analyze positions during play"*, and chess.com closes accounts for violations, even in unrated games. The user decided to lift it — PonPon shows suggestions during their own in-progress games too, and the intro and the README state the risk plainly. What remains is principle 2: on a page PonPon doesn't positively recognise, nothing runs.
 
 | ID | Requirement | Pri |
 |---|---|---|
-| FP-1 | On `in-progress-vs-human` (a game I'm playing, or might be) and `unknown` pages, PonPon shows no engine output at all: no eval bar, no arrows, no labels, and no grades for earlier moves of the same game. The side panel shows "Game in progress. PonPon reviews it as soon as it ends." The engine doesn't run. | P0 |
-| FP-2 | The guard unlocks only when a result is visible (1-0, 0-1, ½-½, or the game-over panel). Resigning, timing out, aborting and draws all count. | P0 |
-| FP-3 | **Auto-review on game end:** when a game I was watching goes from in-progress to finished, PonPon starts the full review right away and opens the summary. (Setting, on by default. When it's off, the game waits for a Review button; a game counts as watched after 3 s in progress, since a finished game's page draws its moves a moment before its result.) The side panel has to be open already: Chrome opens it only from a user gesture, and the engine lives there (ENG-2). | P0 |
+| FP-1 | On `unknown` and `unsupported` pages, PonPon shows no engine output at all: no eval bar, no arrows, no labels, and no grades. The engine doesn't run. | P0 |
+| FP-2 | A game against a person counts as finished only once the result row (1-0, 0-1, ½-½) is in the move list; the game-over modal alone doesn't count. Until then it is `live-game`. | P0 |
+| FP-3 | **Auto-review on game end:** when a game page goes from `live-game` to finished, PonPon starts the full review right away and opens the summary. (Setting, on by default. When it's off, the game waits for a Review button; a game counts as having been in progress after 3 s, since a finished game's page draws its moves a moment before its result.) The side panel has to be open already: Chrome opens it only from a user gesture, and the engine lives there (ENG-2). | P0 |
 | FP-4 | `bot-game` pages are fully live: suggestions, eval bar and per-move grades while I play. | P0 |
-| FP-5 | While any chess.com tab, in any window, has a game in progress that may be mine, PonPon locks in every tab, including the analysis board, games I'm watching and pasted PGNs. A game page whose content script doesn't answer (a tab opened before PonPon was loaded) also locks, with a notice to reload it. The side panel keeps a port to every chess.com tab. | P0 |
+| FP-5 | *Removed 2026-10-25 with the fair-play guard: the panel no longer locks when a game may be mine in another tab.* | — |
 | FP-6 | A test matrix (§10) covers every page type, plus the moment a game ends. It runs before every release. | P0 |
-| FP-7 | **Watching a game:** a game against people in progress where I'm logged in and neither player is me is reviewed live, like a bot game. It needs my name (the sidebar's link to my profile) and both players' names; anything unread counts as mine, and `/play/online` never counts as watching. Chess.com shows spectators its own engine analysis, and the policy covers players. | P0 |
+| FP-7 | **Live games:** any game against a person in progress — mine or someone else's — is reviewed live, like a bot game, with suggestions while it is played. (Until 2026-10-25 only games I was watching were live, checked by neither player being me.) | P0 |
 
 ### 6.3 Engine (ENG)
 
@@ -215,8 +215,8 @@ Rules are checked in order and the first match wins. All thresholds live in `src
 3. **Analysis board.** I set up or explore a position. Suggestions and arrows update with every move.
 4. **A bot game.** I play a chess.com bot. Each move gets a grade as I play, and suggestions show for my turn.
 5. **Paste.** I paste a PGN from anywhere and get the full review in the side panel (no board overlay).
-6. **A live game against a person.** The panel says "Game in progress". Nothing else shows until it ends, then flow 1 runs.
-7. **Watching a game.** I open someone else's game from Watch. Each move is graded as it's played; when the game ends the summary shows. If I start a game of my own in another tab, PonPon goes off everywhere until it ends (FP-5).
+6. **A live game against a person.** I play a Live or Daily game. Each move is graded as I play, and suggestions show on my turn (FP-7) — the arrows are on the board while the clock runs, which is what chess.com's Fair Play Policy bans.
+7. **Watching a game.** I open someone else's game from Watch. Each move is graded as it's played; when the game ends the summary shows.
 
 ## 8. Technical architecture
 
@@ -231,10 +231,10 @@ chess.com tab                                 port                Side panel (ex
 └──────────────────────────┘      Service worker: opens the side panel on the toolbar icon
 ```
 
-- **Messaging (decided 2026-10-24).** The side panel connects straight to the content script in its window's active tab and reconnects when the active tab changes. The service worker stays out of the message path: MV3 stops idle workers, which would mean reconnect logic on both ends and per-tab state kept in storage. FP-5 needs every tab's state; the side panel keeps a port to every chess.com tab instead of bringing the worker back in (decided 2026-10-25).
+- **Messaging (decided 2026-10-24).** The side panel connects straight to the content script in its window's active tab and reconnects when the active tab changes. The service worker stays out of the message path: MV3 stops idle workers, which would mean reconnect logic on both ends and per-tab state kept in storage. The side panel keeps a port to every chess.com tab, so switching tabs needs no reconnect (decided 2026-10-25, originally for FP-5).
 - **Manifest V3.** `side_panel.default_path`; `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
 - **CSP:** `"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"` (needed to run WASM).
-- **The fair-play decision is made in two places.** The content script classifies the page. The side panel refuses to start the engine unless the latest page state is unlocked. Neither trusts the other's cached state for more than one message.
+- **The page lock is decided in two places.** The content script classifies the page. The side panel refuses to start the engine unless the latest page state is unlocked. Neither trusts the other's cached state for more than one message.
 - **Libraries:** `chess.js` (BSD-2) for legality, FEN and SAN; `stockfish.js` (GPL-3.0); `lichess-org/chess-openings` (CC0); `chessground` (GPL-3.0, P2 only). No UI framework: plain TypeScript and DOM APIs.
 - **Build:** TypeScript, Vite, Vitest. DOM adapter tests run against saved chess.com HTML fixtures in happy-dom.
 - **License:** Stockfish is GPL-3.0, so PonPon is **GPL-3.0**. The obligations only apply if it's shared, but the LICENSE file and an About-screen source link go in from the start.
@@ -273,11 +273,12 @@ chess.com tab                                 port                Side panel (ex
 | Risk | Mitigation |
 |---|---|
 | chess.com changes its DOM and the adapter breaks | All selectors in one file; fixture tests; principle 1 ("can't read this page", not wrong data); PGN paste always works |
-| The guard misreads a page and shows analysis during a live game | Unknown = locked; unlocking needs a visible result; FP matrix before every release; FP-5 as a second layer |
+| chess.com closes the account for engine use during live games | None: the user chose this knowing the policy (2026-10-25); the intro and the README state the risk |
+| A page is misread and the panel shows a wrong game | Unknown = locked; a game is finished only with a visible result; principle 1 (the board's placement is cross-checked, and "can't read this game" rather than wrong data) |
 | PonPon's labels disagree with chess.com's and look wrong | Thresholds in one file and tuned on real games; the About screen says PonPon uses Lichess's Win% model |
 | False *Pon!* labels (fake sacrifices) | Conservative rule (4-ply material check, Wb ≤ 90, Wa ≥ 50); golden tests include fake sacrifices |
 | The engine is too slow on older laptops | Fast preset; streamed results; the threaded build later (ENG-6) |
-| chess.com objects, or the Web Store rejects it if it's published later | Not published for now. No chess.com logos or branding in the UI; if published, the listing says "post-game analysis and practice" and describes the guard |
+| chess.com objects, or the Web Store rejects it if it's published later | Not published for now. No chess.com logos or branding in the UI; if published, the listing describes what PonPon does, live games included |
 | GPL obligations if it's shared | LICENSE file and source link in place from day one |
 
 ## 13. Decisions and open questions
@@ -330,6 +331,9 @@ chess.com tab                                 port                Side panel (ex
 - **Game accuracy (REV-6)** follows lila exactly: positions' evaluations, capped, windows of moves ÷ 10 (2–8) positions, weights clamped to 0.5–12, harmonic mean with a floor of 1. Book moves count, as on Lichess, so REV-5's "book moves excluded" no longer applies.
 - **Eval graph (REV-7)** in the summary card, coloured like the eval bar, from the same capped Win%. Dots for *Pon!*, *Bhale!*, *Swalpa*, *Tappu*, *Kai Jaaritu* and *Ayyo*; a gold line marks the selected move.
 - **Key moments (REV-8)** only list Inaccuracy or worse (Δ ≥ 5), biggest first, so a clean game shows none rather than three Excellent moves.
+
+**Decided 2026-10-25** (asked)
+- **Live suggestions in my own games.** The fair-play guard is gone: every game page PonPon can read is live now, my own in-progress games included. `spectating` and `in-progress-vs-human` collapsed into `live-game`; the neither-player-is-me check and FP-5's every-tab lock were removed, and own games behave exactly like spectated ones — reviewed live, suggestions on the position the board shows. The user knows chess.com's Fair Play Policy bans engine help during play and closes accounts for it, even in unrated games, and takes that risk; the intro and the README say so. `unknown` and `unsupported` pages stay locked (principle 2).
 
 **Still open:** nothing right now.
 
